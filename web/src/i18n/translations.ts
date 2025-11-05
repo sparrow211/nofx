@@ -3,7 +3,7 @@ export type Language = 'en' | 'zh';
 export const translations = {
   en: {
     // Header
-    appTitle: 'NOFX',
+    appTitle: 'NF',
     subtitle: 'Multi-AI Model Trading Platform',
     aiTraders: 'AI Traders',
     details: 'Details',
@@ -15,14 +15,14 @@ export const translations = {
     logout: 'Logout',
     switchTrader: 'Switch Trader:',
     view: 'View',
-    
+
     // Navigation
     realtimeNav: 'Live',
     configNav: 'Config',
     dashboardNav: 'Dashboard',
 
     // Footer
-    footerTitle: 'NOFX - AI Trading System',
+    footerTitle: 'AI Trading System',
     footerWarning: '⚠️ Trading involves risk. Use at your own discretion.',
 
     // Stats Cards
@@ -74,7 +74,7 @@ export const translations = {
     recent: 'Recent',
     allData: 'All Data',
     cycles: 'Cycles',
-    
+
     // Comparison Chart
     comparisonMode: 'Comparison Mode',
     dataPoints: 'Data Points',
@@ -168,7 +168,7 @@ export const translations = {
     useTestnet: 'Use Testnet',
     enabled: 'Enabled',
     save: 'Save',
-    
+
     // AI Model Configuration
     officialAPI: 'Official API',
     customAPI: 'Custom API',
@@ -272,7 +272,7 @@ export const translations = {
     exchangeNotExist: 'Exchange does not exist',
     deleteExchangeConfigFailed: 'Failed to delete exchange configuration',
     saveSignalSourceFailed: 'Failed to save signal source configuration',
-    
+
     // Login & Register
     login: 'Sign In',
     register: 'Sign Up',
@@ -334,20 +334,20 @@ export const translations = {
     exitLogin: 'Sign Out',
     signIn: 'Sign In',
     signUp: 'Sign Up',
-    
+
     // Hero Section
-    githubStarsInDays: '2.5K+ GitHub Stars in 3 days',
+    githubStarsInDays: 'AI ',
     heroTitle1: 'Read the Market.',
     heroTitle2: 'Write the Trade.',
-    heroDescription: 'NOFX is the future standard for AI trading — an open, community-driven agentic trading OS. Supporting Binance, Aster DEX and other exchanges, self-hosted, multi-agent competition, let AI automatically make decisions, execute and optimize trades for you.',
+    heroDescription: 'let AI automatically make decisions, execute and optimize trades for you.',
     poweredBy: 'Powered by Aster DEX and Binance, strategically invested by Amber.ac.',
-    
+
     // Landing Page CTA
     readyToDefine: 'Ready to define the future of AI trading?',
     startWithCrypto: 'Starting with crypto markets, expanding to TradFi. NOFX is the infrastructure of AgentFi.',
     getStartedNow: 'Get Started Now',
     viewSourceCode: 'View Source Code',
-    
+
     // Features Section
     coreFeatures: 'Core Features',
     whyChooseNofx: 'Why Choose NOFX?',
@@ -370,7 +370,7 @@ export const translations = {
     secureFeatures2: 'Fine-grained API permission control',
     secureFeatures3: 'Real-time risk monitoring',
     secureFeatures4: 'Trading log auditing',
-    
+
     // About Section
     aboutNofx: 'About NOFX',
     whatIsNofx: 'What is NOFX?',
@@ -385,7 +385,7 @@ export const translations = {
     startupMessages1: 'Starting automated trading system...',
     startupMessages2: 'API server started on port 8080',
     startupMessages3: 'Web console http://localhost:3000',
-    
+
     // How It Works Section
     howToStart: 'How to Get Started with NOFX',
     fourSimpleSteps: 'Four simple steps to start your AI automated trading journey',
@@ -399,9 +399,9 @@ export const translations = {
     step4Desc: 'Monitor trading, submit PRs to improve framework. Join Telegram to share strategies.',
     importantRiskWarning: 'Important Risk Warning',
     riskWarningText: 'Dev branch is unstable, do not use funds you cannot afford to lose. NOFX is non-custodial, no official strategies. Trading involves risks, invest carefully.',
-    
+
     // Community Section (testimonials are kept as-is since they are quotes)
-    
+
     // Footer Section
     futureStandardAI: 'The future standard of AI trading',
     links: 'Links',
@@ -409,7 +409,7 @@ export const translations = {
     documentation: 'Documentation',
     supporters: 'Supporters',
     strategicInvestment: '(Strategic Investment)',
-    
+
     // Login Modal
     accessNofxPlatform: 'Access NOFX Platform',
     loginRegisterPrompt: 'Please login or register to access the full AI trading platform',
@@ -417,7 +417,7 @@ export const translations = {
   },
   zh: {
     // Header
-    appTitle: 'NOFX',
+    appTitle: 'NF',
     subtitle: '多AI模型交易平台',
     aiTraders: 'AI交易员',
     details: '详情',
@@ -429,14 +429,14 @@ export const translations = {
     logout: '退出',
     switchTrader: '切换交易员:',
     view: '查看',
-    
+
     // Navigation
     realtimeNav: '实时',
     configNav: '配置',
     dashboardNav: '看板',
 
     // Footer
-    footerTitle: 'NOFX - AI交易系统',
+    footerTitle: 'AI交易系统',
     footerWarning: '⚠️ 交易有风险，请谨慎使用。',
 
     // Stats Cards
@@ -488,7 +488,7 @@ export const translations = {
     recent: '最近',
     allData: '全部数据',
     cycles: '个',
-    
+
     // Comparison Chart
     comparisonMode: '对比模式',
     dataPoints: '数据点数',
@@ -582,7 +582,7 @@ export const translations = {
     useTestnet: '使用测试网',
     enabled: '启用',
     save: '保存',
-    
+
     // AI Model Configuration
     officialAPI: '官方API',
     customAPI: '自定义API',
@@ -686,7 +686,7 @@ export const translations = {
     exchangeNotExist: '交易所不存在',
     deleteExchangeConfigFailed: '删除交易所配置失败',
     saveSignalSourceFailed: '保存信号源配置失败',
-    
+
     // Login & Register
     login: '登录',
     register: '注册',
@@ -748,20 +748,20 @@ export const translations = {
     exitLogin: '退出登录',
     signIn: '登录',
     signUp: '注册',
-    
+
     // Hero Section
     githubStarsInDays: '3 天内 2.5K+ GitHub Stars',
     heroTitle1: 'Read the Market.',
     heroTitle2: 'Write the Trade.',
-    heroDescription: 'NOFX 是 AI 交易的未来标准——一个开放、社区驱动的代理式交易操作系统。支持 Binance、Aster DEX 等交易所，自托管、多代理竞争，让 AI 为你自动决策、执行和优化交易。',
+    heroDescription: '让 AI 为你自动决策、执行和优化交易。',
     poweredBy: '由 Aster DEX 和 Binance 提供支持，Amber.ac 战略投资。',
-    
+
     // Landing Page CTA
     readyToDefine: '准备好定义 AI 交易的未来吗？',
     startWithCrypto: '从加密市场起步，扩展到 TradFi。NOFX 是 AgentFi 的基础架构。',
     getStartedNow: '立即开始',
     viewSourceCode: '查看源码',
-    
+
     // Features Section
     coreFeatures: '核心功能',
     whyChooseNofx: '为什么选择 NOFX？',
@@ -784,7 +784,7 @@ export const translations = {
     secureFeatures2: 'API 权限精细控制',
     secureFeatures3: '实时风险监控',
     secureFeatures4: '交易日志审计',
-    
+
     // About Section
     aboutNofx: '关于 NOFX',
     whatIsNofx: '什么是 NOFX？',
@@ -799,7 +799,7 @@ export const translations = {
     startupMessages1: ' 启动自动交易系统...',
     startupMessages2: ' API服务器启动在端口 8080',
     startupMessages3: ' Web 控制台 http://localhost:3000',
-    
+
     // How It Works Section
     howToStart: '如何开始使用 NOFX',
     fourSimpleSteps: '四个简单步骤，开启 AI 自动交易之旅',
@@ -813,9 +813,9 @@ export const translations = {
     step4Desc: '监控交易，提交 PR 改进框架。加入 Telegram 分享策略。',
     importantRiskWarning: '重要风险提示',
     riskWarningText: 'dev 分支不稳定，勿用无法承受损失的资金。NOFX 非托管，无官方策略。交易有风险，投资需谨慎。',
-    
+
     // Community Section (testimonials are kept as-is since they are quotes)
-    
+
     // Footer Section
     futureStandardAI: 'AI 交易的未来标准',
     links: '链接',
@@ -823,7 +823,7 @@ export const translations = {
     documentation: '文档',
     supporters: '支持方',
     strategicInvestment: '(战略投资)',
-    
+
     // Login Modal
     accessNofxPlatform: '访问 NOFX 平台',
     loginRegisterPrompt: '请选择登录或注册以访问完整的 AI 交易平台',

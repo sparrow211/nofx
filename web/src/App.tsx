@@ -48,7 +48,7 @@ function App() {
   const getInitialPage = (): Page => {
     const path = window.location.pathname;
     const hash = window.location.hash.slice(1); // 去掉 #
-    
+
     if (path === '/traders' || hash === 'traders') return 'traders';
     if (path === '/dashboard' || hash === 'trader' || hash === 'details') return 'trader';
     return 'competition'; // 默认为竞赛页面
@@ -63,7 +63,7 @@ function App() {
     const handleRouteChange = () => {
       const path = window.location.pathname;
       const hash = window.location.hash.slice(1);
-      
+
       if (path === '/traders' || hash === 'traders') {
         setCurrentPage('traders');
       } else if (path === '/dashboard' || hash === 'trader' || hash === 'details') {
@@ -90,8 +90,8 @@ function App() {
 
   // 获取trader列表（仅在用户登录时）
   const { data: traders } = useSWR<TraderInfo[]>(
-    user && token ? 'traders' : null, 
-    api.getTraders, 
+    user && token ? 'traders' : null,
+    api.getTraders,
     {
       refreshInterval: 10000,
     }
@@ -199,7 +199,7 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#0B0E11' }}>
         <div className="text-center">
-          <img src="/icons/nofx.svg" alt="NoFx Logo" className="w-16 h-16 mx-auto mb-4 animate-pulse" />
+          <img src="/icons/aibtc.svg" alt="NoFx Logo" className="w-16 h-16 mx-auto mb-4 animate-pulse" />
           <p style={{ color: '#EAECEF' }}>{t('loading', language)}</p>
         </div>
       </div>
@@ -216,9 +216,9 @@ function App() {
   if (route === '/competition') {
     return (
       <div className="min-h-screen" style={{ background: '#000000', color: '#EAECEF' }}>
-        <HeaderBar 
- 
-          isLoggedIn={!!user} 
+        <HeaderBar
+
+          isLoggedIn={!!user}
           currentPage="competition"
           language={language}
           onLanguageChange={setLanguage}
@@ -228,7 +228,7 @@ function App() {
           onPageChange={(page) => {
             console.log('Competition page onPageChange called with:', page);
             console.log('Current route:', route, 'Current page:', currentPage);
-            
+
             if (page === 'competition') {
               console.log('Navigating to competition');
               window.history.pushState({}, '', '/competition');
@@ -245,7 +245,7 @@ function App() {
               setRoute('/dashboard');
               setCurrentPage('trader');
             }
-            
+
             console.log('After navigation - route:', route, 'currentPage:', currentPage);
           }}
         />
@@ -255,12 +255,12 @@ function App() {
       </div>
     );
   }
-  
+
   // Show landing page for root route
   if (route === '/' || route === '') {
     return <LandingPage />;
   }
-  
+
   // Show main app for authenticated users on other routes
   if (!systemConfig?.admin_mode && (!user || !token)) {
     // Default to landing page when not authenticated and no specific route
@@ -269,8 +269,8 @@ function App() {
 
   return (
     <div className="min-h-screen" style={{ background: '#0B0E11', color: '#EAECEF' }}>
-      <HeaderBar 
-        isLoggedIn={!!user} 
+      <HeaderBar
+        isLoggedIn={!!user}
         currentPage={currentPage}
         language={language}
         onLanguageChange={setLanguage}
@@ -279,7 +279,7 @@ function App() {
         isAdminMode={systemConfig?.admin_mode}
         onPageChange={(page) => {
           console.log('Main app onPageChange called with:', page);
-          
+
           if (page === 'competition') {
             window.history.pushState({}, '', '/competition');
             setRoute('/competition');
@@ -301,7 +301,7 @@ function App() {
         {currentPage === 'competition' ? (
           <CompetitionPage />
         ) : currentPage === 'traders' ? (
-          <AITradersPage 
+          <AITradersPage
             onTraderSelect={(traderId) => {
               setSelectedTraderId(traderId);
               window.history.pushState({}, '', '/dashboard');
@@ -333,8 +333,7 @@ function App() {
           <p className="mt-1">{t('footerWarning', language)}</p>
           <div className="mt-4">
             <a
-              href="https://github.com/tinkle-community/nofx"
-              target="_blank"
+              href="#"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3 py-2 rounded text-sm font-semibold transition-all hover:scale-105"
               style={{ background: '#1E2329', color: '#848E9C', border: '1px solid #2B3139' }}
@@ -349,10 +348,7 @@ function App() {
                 e.currentTarget.style.borderColor = '#2B3139';
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-              </svg>
-              GitHub
+              Panda QQ:414167924
             </a>
           </div>
         </div>
@@ -425,7 +421,7 @@ function TraderDetailsPage({
             </span>
             {selectedTrader.trader_name}
           </h2>
-          
+
           {/* Trader Selector */}
           {traders && traders.length > 0 && (
             <div className="flex items-center gap-2">
@@ -506,77 +502,77 @@ function TraderDetailsPage({
 
           {/* Current Positions */}
           <div className="binance-card p-6 animate-slide-in" style={{ animationDelay: '0.15s' }}>
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: '#EAECEF' }}>
-            📈 {t('currentPositions', language)}
-          </h2>
-          {positions && positions.length > 0 && (
-            <div className="text-xs px-3 py-1 rounded" style={{ background: 'rgba(240, 185, 11, 0.1)', color: '#F0B90B', border: '1px solid rgba(240, 185, 11, 0.2)' }}>
-              {positions.length} {t('active', language)}
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: '#EAECEF' }}>
+                📈 {t('currentPositions', language)}
+              </h2>
+              {positions && positions.length > 0 && (
+                <div className="text-xs px-3 py-1 rounded" style={{ background: 'rgba(240, 185, 11, 0.1)', color: '#F0B90B', border: '1px solid rgba(240, 185, 11, 0.2)' }}>
+                  {positions.length} {t('active', language)}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        {positions && positions.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left border-b border-gray-800">
-                <tr>
-                  <th className="pb-3 font-semibold text-gray-400">{t('symbol', language)}</th>
-                  <th className="pb-3 font-semibold text-gray-400">{t('side', language)}</th>
-                  <th className="pb-3 font-semibold text-gray-400">{t('entryPrice', language)}</th>
-                  <th className="pb-3 font-semibold text-gray-400">{t('markPrice', language)}</th>
-                  <th className="pb-3 font-semibold text-gray-400">{t('quantity', language)}</th>
-                  <th className="pb-3 font-semibold text-gray-400">{t('positionValue', language)}</th>
-                  <th className="pb-3 font-semibold text-gray-400">{t('leverage', language)}</th>
-                  <th className="pb-3 font-semibold text-gray-400">{t('unrealizedPnL', language)}</th>
-                  <th className="pb-3 font-semibold text-gray-400">{t('liqPrice', language)}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((pos, i) => (
-                  <tr key={i} className="border-b border-gray-800 last:border-0">
-                    <td className="py-3 font-mono font-semibold">{pos.symbol}</td>
-                    <td className="py-3">
-                      <span
-                        className="px-2 py-1 rounded text-xs font-bold"
-                        style={pos.side === 'long'
-                          ? { background: 'rgba(14, 203, 129, 0.1)', color: '#0ECB81' }
-                          : { background: 'rgba(246, 70, 93, 0.1)', color: '#F6465D' }
-                        }
-                      >
-                        {t(pos.side === 'long' ? 'long' : 'short', language)}
-                      </span>
-                    </td>
-                    <td className="py-3 font-mono" style={{ color: '#EAECEF' }}>{pos.entry_price.toFixed(4)}</td>
-                    <td className="py-3 font-mono" style={{ color: '#EAECEF' }}>{pos.mark_price.toFixed(4)}</td>
-                    <td className="py-3 font-mono" style={{ color: '#EAECEF' }}>{pos.quantity.toFixed(4)}</td>
-                    <td className="py-3 font-mono font-bold" style={{ color: '#EAECEF' }}>
-                      {(pos.quantity * pos.mark_price).toFixed(2)} USDT
-                    </td>
-                    <td className="py-3 font-mono" style={{ color: '#F0B90B' }}>{pos.leverage}x</td>
-                    <td className="py-3 font-mono">
-                      <span
-                        style={{ color: pos.unrealized_pnl >= 0 ? '#0ECB81' : '#F6465D', fontWeight: 'bold' }}
-                      >
-                        {pos.unrealized_pnl >= 0 ? '+' : ''}
-                        {pos.unrealized_pnl.toFixed(2)} ({pos.unrealized_pnl_pct.toFixed(2)}%)
-                      </span>
-                    </td>
-                    <td className="py-3 font-mono" style={{ color: '#848E9C' }}>
-                      {pos.liquidation_price.toFixed(4)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-16" style={{ color: '#848E9C' }}>
-            <div className="text-6xl mb-4 opacity-50">📊</div>
-            <div className="text-lg font-semibold mb-2">{t('noPositions', language)}</div>
-            <div className="text-sm">{t('noActivePositions', language)}</div>
-          </div>
-        )}
+            {positions && positions.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left border-b border-gray-800">
+                    <tr>
+                      <th className="pb-3 font-semibold text-gray-400">{t('symbol', language)}</th>
+                      <th className="pb-3 font-semibold text-gray-400">{t('side', language)}</th>
+                      <th className="pb-3 font-semibold text-gray-400">{t('entryPrice', language)}</th>
+                      <th className="pb-3 font-semibold text-gray-400">{t('markPrice', language)}</th>
+                      <th className="pb-3 font-semibold text-gray-400">{t('quantity', language)}</th>
+                      <th className="pb-3 font-semibold text-gray-400">{t('positionValue', language)}</th>
+                      <th className="pb-3 font-semibold text-gray-400">{t('leverage', language)}</th>
+                      <th className="pb-3 font-semibold text-gray-400">{t('unrealizedPnL', language)}</th>
+                      <th className="pb-3 font-semibold text-gray-400">{t('liqPrice', language)}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {positions.map((pos, i) => (
+                      <tr key={i} className="border-b border-gray-800 last:border-0">
+                        <td className="py-3 font-mono font-semibold">{pos.symbol}</td>
+                        <td className="py-3">
+                          <span
+                            className="px-2 py-1 rounded text-xs font-bold"
+                            style={pos.side === 'long'
+                              ? { background: 'rgba(14, 203, 129, 0.1)', color: '#0ECB81' }
+                              : { background: 'rgba(246, 70, 93, 0.1)', color: '#F6465D' }
+                            }
+                          >
+                            {t(pos.side === 'long' ? 'long' : 'short', language)}
+                          </span>
+                        </td>
+                        <td className="py-3 font-mono" style={{ color: '#EAECEF' }}>{pos.entry_price.toFixed(4)}</td>
+                        <td className="py-3 font-mono" style={{ color: '#EAECEF' }}>{pos.mark_price.toFixed(4)}</td>
+                        <td className="py-3 font-mono" style={{ color: '#EAECEF' }}>{pos.quantity.toFixed(4)}</td>
+                        <td className="py-3 font-mono font-bold" style={{ color: '#EAECEF' }}>
+                          {(pos.quantity * pos.mark_price).toFixed(2)} USDT
+                        </td>
+                        <td className="py-3 font-mono" style={{ color: '#F0B90B' }}>{pos.leverage}x</td>
+                        <td className="py-3 font-mono">
+                          <span
+                            style={{ color: pos.unrealized_pnl >= 0 ? '#0ECB81' : '#F6465D', fontWeight: 'bold' }}
+                          >
+                            {pos.unrealized_pnl >= 0 ? '+' : ''}
+                            {pos.unrealized_pnl.toFixed(2)} ({pos.unrealized_pnl_pct.toFixed(2)}%)
+                          </span>
+                        </td>
+                        <td className="py-3 font-mono" style={{ color: '#848E9C' }}>
+                          {pos.liquidation_price.toFixed(4)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-16" style={{ color: '#848E9C' }}>
+                <div className="text-6xl mb-4 opacity-50">📊</div>
+                <div className="text-lg font-semibold mb-2">{t('noPositions', language)}</div>
+                <div className="text-sm">{t('noActivePositions', language)}</div>
+              </div>
+            )}
           </div>
         </div>
         {/* 左侧结束 */}

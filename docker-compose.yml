@@ -19,6 +19,12 @@ services:
       - TZ=${NOFX_TIMEZONE:-Asia/Shanghai}  # Set timezone
     networks:
       - nofx-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"      # 单个日志文件最大 10MB
+        max-file: "5"        # 保留最多 5 个日志文件
+        compress: "true"     # 压缩旧日志文件
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s
@@ -39,6 +45,12 @@ services:
       - nofx-network
     depends_on:
       - nofx
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"       # 前端日志相对较少，单文件 5MB
+        max-file: "3"        # 保留 3 个日志文件
+        compress: "true"     # 压缩旧日志文件
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s

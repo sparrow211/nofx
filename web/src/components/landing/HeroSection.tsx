@@ -25,18 +25,7 @@ export default function HeroSection({ language }: HeroSectionProps) {
         <div className='grid lg:grid-cols-2 gap-12 items-center'>
           {/* Left Content */}
           <motion.div className='space-y-6 relative z-10' style={{ opacity, scale }} initial='initial' animate='animate' variants={staggerContainer}>
-            <motion.div variants={fadeInUp}>
-              <motion.div
-                className='inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6'
-                style={{ background: 'rgba(240, 185, 11, 0.1)', border: '1px solid rgba(240, 185, 11, 0.2)' }}
-                whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(240, 185, 11, 0.2)' }}
-              >
-                <Sparkles className='w-4 h-4' style={{ color: 'var(--brand-yellow)' }} />
-                <span className='text-sm font-semibold' style={{ color: 'var(--brand-yellow)' }}>
-{t('githubStarsInDays', language)}
-                </span>
-              </motion.div>
-            </motion.div>
+
 
             <h1 className='text-5xl lg:text-7xl font-bold leading-tight' style={{ color: 'var(--brand-light-gray)' }}>
               {t('heroTitle1', language)}
@@ -44,41 +33,16 @@ export default function HeroSection({ language }: HeroSectionProps) {
               <span style={{ color: 'var(--brand-yellow)' }}>{t('heroTitle2', language)}</span>
             </h1>
 
-            <motion.p className='text-xl leading-relaxed' style={{ color: 'var(--text-secondary)' }} variants={fadeInUp}>
-              {t('heroDescription', language)}
-            </motion.p>
 
-            <div className='flex items-center gap-3 flex-wrap'>
-              <motion.a href='https://github.com/tinkle-community/nofx' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
-                <img
-                  src='https://img.shields.io/github/stars/tinkle-community/nofx?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
-                  alt='GitHub Stars'
-                  className='h-7'
-                />
-              </motion.a>
-              <motion.a href='https://github.com/tinkle-community/nofx/network/members' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
-                <img
-                  src='https://img.shields.io/github/forks/tinkle-community/nofx?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
-                  alt='GitHub Forks'
-                  className='h-7'
-                />
-              </motion.a>
-              <motion.a href='https://github.com/tinkle-community/nofx/graphs/contributors' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
-                <img
-                  src='https://img.shields.io/github/contributors/tinkle-community/nofx?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
-                  alt='GitHub Contributors'
-                  className='h-7'
-                />
-              </motion.a>
-            </div>
+
 
             <motion.p className='text-xs pt-4' style={{ color: 'var(--text-tertiary)' }} variants={fadeInUp}>
-{t('poweredBy', language)}
+              {t('poweredBy', language)}
             </motion.p>
           </motion.div>
 
           {/* Right Visual - Interactive Robot */}
-          <div 
+          <div
             className='relative w-full cursor-pointer'
             onMouseEnter={() => {
               handControls.start({
@@ -106,19 +70,19 @@ export default function HeroSection({ language }: HeroSectionProps) {
             }}
           >
             {/* Background Layer */}
-            <motion.img 
-              src='/images/hand-bg.png' 
-              alt='NOFX Platform Background' 
+            <motion.img
+              src='/images/hand-bg.png'
+              alt='NF Platform Background'
               className='w-full opacity-90'
               style={{ opacity, scale }}
               whileHover={{ scale: 1.02 }}
               transition={{ type: 'spring', stiffness: 300 }}
             />
-            
+
             {/* Hand Layer - Animated */}
-            <motion.img 
-              src='/images/hand.png' 
-              alt='Robot Hand' 
+            <motion.img
+              src='/images/hand.png'
+              alt='Robot Hand'
               className='absolute top-0 left-0 w-full'
               style={{ opacity }}
               animate={handControls}

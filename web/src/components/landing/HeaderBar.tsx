@@ -46,9 +46,9 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
         <div className='flex items-center justify-between h-16'>
           {/* Logo */}
           <a href='/' className='flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer'>
-            <img src='/icons/nofx.svg' alt='NOFX Logo' className='w-8 h-8' />
+            <img src='/icons/aibtc.svg' alt='NF Logo' className='w-8 h-8' />
             <span className='text-xl font-bold' style={{ color: 'var(--brand-yellow)' }}>
-              NOFX
+              NF
             </span>
             <span className='text-sm hidden sm:block' style={{ color: 'var(--text-secondary)' }}>
               Agentic Trading OS
@@ -87,7 +87,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   >
                     {/* Background for selected state */}
                     {currentPage === 'competition' && (
-                      <span 
+                      <span
                         className="absolute inset-0 rounded-lg"
                         style={{
                           background: 'rgba(240, 185, 11, 0.15)',
@@ -95,10 +95,10 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                         }}
                       />
                     )}
-                    
+
                     {t('realtimeNav', language)}
                   </button>
-                  
+
                   <button
                     onClick={() => {
                       console.log('配置 button clicked, onPageChange:', onPageChange);
@@ -124,7 +124,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   >
                     {/* Background for selected state */}
                     {currentPage === 'traders' && (
-                      <span 
+                      <span
                         className="absolute inset-0 rounded-lg"
                         style={{
                           background: 'rgba(240, 185, 11, 0.15)',
@@ -132,10 +132,10 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                         }}
                       />
                     )}
-                    
+
                     {t('configNav', language)}
                   </button>
-                  
+
                   <button
                     onClick={() => {
                       console.log('看板 button clicked, onPageChange:', onPageChange);
@@ -161,7 +161,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   >
                     {/* Background for selected state */}
                     {currentPage === 'trader' && (
-                      <span 
+                      <span
                         className="absolute inset-0 rounded-lg"
                         style={{
                           background: 'rgba(240, 185, 11, 0.15)',
@@ -169,7 +169,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                         }}
                       />
                     )}
-                    
+
                     {t('dashboardNav', language)}
                   </button>
                 </>
@@ -197,7 +197,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                 >
                   {/* Background for selected state */}
                   {currentPage === 'competition' && (
-                    <span 
+                    <span
                       className="absolute inset-0 rounded-lg"
                       style={{
                         background: 'rgba(240, 185, 11, 0.15)',
@@ -205,12 +205,12 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                       }}
                     />
                   )}
-                  
+
                   {t('realtimeNav', language)}
                 </a>
               )}
             </div>
-            
+
             {/* Right Side - Original Navigation Items and Login */}
             <div className='flex items-center gap-6'>
               {/* Only show original navigation items on home page */}
@@ -226,8 +226,8 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                     item.key === 'GitHub'
                       ? 'https://github.com/tinkle-community/nofx'
                       : item.key === 'community'
-                      ? 'https://t.me/nofx_dev_community'
-                      : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
+                        ? 'https://t.me/nofx_dev_community'
+                        : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
                   }
                   target={item.key === 'GitHub' || item.key === 'community' ? '_blank' : undefined}
                   rel={item.key === 'GitHub' || item.key === 'community' ? 'noopener noreferrer' : undefined}
@@ -260,7 +260,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                       <span className='text-sm' style={{ color: 'var(--brand-light-gray)' }}>{user.email}</span>
                       <ChevronDown className='w-4 h-4' style={{ color: 'var(--brand-light-gray)' }} />
                     </button>
-                    
+
                     {userDropdownOpen && (
                       <div className='absolute right-0 top-full mt-2 w-48 rounded-lg shadow-lg overflow-hidden z-50' style={{ background: 'var(--brand-dark-gray)', border: '1px solid var(--panel-border)' }}>
                         <div className='px-3 py-2 border-b' style={{ borderColor: 'var(--panel-border)' }}>
@@ -276,7 +276,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                             className='w-full px-3 py-2 text-sm font-semibold transition-colors hover:opacity-80 text-center'
                             style={{ background: 'var(--binance-red-bg)', color: 'var(--binance-red)' }}
                           >
-{t('exitLogin', language)}
+                            {t('exitLogin', language)}
                           </button>
                         )}
                       </div>
@@ -292,19 +292,19 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                       className='px-3 py-2 text-sm font-medium transition-colors rounded'
                       style={{ color: 'var(--brand-light-gray)' }}
                     >
-{t('signIn', language)}
+                      {t('signIn', language)}
                     </a>
                     <a
                       href='/register'
                       className='px-4 py-2 rounded font-semibold text-sm transition-colors hover:opacity-90'
                       style={{ background: 'var(--brand-yellow)', color: 'var(--brand-black)' }}
                     >
-{t('signUp', language)}
+                      {t('signUp', language)}
                     </a>
                   </div>
                 )
               )}
-              
+
               {/* Language Toggle - Always at the rightmost */}
               <div className='relative' ref={dropdownRef}>
                 <button
@@ -319,7 +319,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   </span>
                   <ChevronDown className='w-4 h-4' />
                 </button>
-                
+
                 {languageDropdownOpen && (
                   <div className='absolute right-0 top-full mt-2 w-32 rounded-lg shadow-lg overflow-hidden z-50' style={{ background: 'var(--brand-dark-gray)', border: '1px solid var(--panel-border)' }}>
                     <button
@@ -327,10 +327,9 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                         onLanguageChange?.('zh')
                         setLanguageDropdownOpen(false)
                       }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 transition-colors ${
-                        language === 'zh' ? '' : 'hover:opacity-80'
-                      }`}
-                      style={{ 
+                      className={`w-full flex items-center gap-2 px-3 py-2 transition-colors ${language === 'zh' ? '' : 'hover:opacity-80'
+                        }`}
+                      style={{
                         color: 'var(--brand-light-gray)',
                         background: language === 'zh' ? 'rgba(240, 185, 11, 0.1)' : 'transparent'
                       }}
@@ -343,10 +342,9 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                         onLanguageChange?.('en')
                         setLanguageDropdownOpen(false)
                       }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 transition-colors ${
-                        language === 'en' ? '' : 'hover:opacity-80'
-                      }`}
-                      style={{ 
+                      className={`w-full flex items-center gap-2 px-3 py-2 transition-colors ${language === 'en' ? '' : 'hover:opacity-80'
+                        }`}
+                      style={{
                         color: 'var(--brand-light-gray)',
                         background: language === 'en' ? 'rgba(240, 185, 11, 0.1)' : 'transparent'
                       }}
@@ -401,7 +399,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
             >
               {/* Background for selected state */}
               {currentPage === 'competition' && (
-                <span 
+                <span
                   className="absolute inset-0 rounded-lg"
                   style={{
                     background: 'rgba(240, 185, 11, 0.15)',
@@ -409,11 +407,11 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   }}
                 />
               )}
-              
+
               {t('realtimeNav', language)}
             </button>
           ) : (
-            <a 
+            <a
               href='/competition'
               className='block text-sm font-bold transition-all duration-300 relative focus:outline-2 focus:outline-yellow-500'
               style={{
@@ -425,7 +423,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
             >
               {/* Background for selected state */}
               {currentPage === 'competition' && (
-                <span 
+                <span
                   className="absolute inset-0 rounded-lg"
                   style={{
                     background: 'rgba(240, 185, 11, 0.15)',
@@ -433,7 +431,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   }}
                 />
               )}
-              
+
               {t('realtimeNav', language)}
             </a>
           )}
@@ -458,7 +456,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
               >
                 {/* Background for selected state */}
                 {currentPage === 'traders' && (
-                  <span 
+                  <span
                     className="absolute inset-0 rounded-lg"
                     style={{
                       background: 'rgba(240, 185, 11, 0.15)',
@@ -466,7 +464,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                     }}
                   />
                 )}
-                
+
                 {t('configNav', language)}
               </button>
               <button
@@ -487,7 +485,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
               >
                 {/* Background for selected state */}
                 {currentPage === 'trader' && (
-                  <span 
+                  <span
                     className="absolute inset-0 rounded-lg"
                     style={{
                       background: 'rgba(240, 185, 11, 0.15)',
@@ -495,12 +493,12 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                     }}
                   />
                 )}
-                
+
                 {t('dashboardNav', language)}
               </button>
             </>
           )}
-          
+
           {/* Original Navigation Items - Only on home page */}
           {isHomePage && [
             { key: 'features', label: t('features', language) },
@@ -508,24 +506,24 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
             { key: 'GitHub', label: 'GitHub' },
             { key: 'community', label: t('community', language) }
           ].map((item) => (
-            <a 
-              key={item.key} 
+            <a
+              key={item.key}
               href={
                 item.key === 'GitHub'
                   ? 'https://github.com/tinkle-community/nofx'
                   : item.key === 'community'
-                  ? 'https://t.me/nofx_dev_community'
-                  : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
+                    ? 'https://t.me/nofx_dev_community'
+                    : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
               }
               target={item.key === 'GitHub' || item.key === 'community' ? '_blank' : undefined}
               rel={item.key === 'GitHub' || item.key === 'community' ? 'noopener noreferrer' : undefined}
-              className='block text-sm py-2' 
+              className='block text-sm py-2'
               style={{ color: 'var(--brand-light-gray)' }}
             >
               {item.label}
             </a>
           ))}
-          
+
           {/* Language Toggle */}
           <div className='py-2'>
             <div className='flex items-center gap-2 mb-2'>
@@ -537,9 +535,8 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   onLanguageChange?.('zh')
                   setMobileMenuOpen(false)
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded transition-colors ${
-                  language === 'zh' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'
-                }`}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded transition-colors ${language === 'zh' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'
+                  }`}
               >
                 <span className='text-lg'>🇨🇳</span>
                 <span className='text-sm'>中文</span>
@@ -549,9 +546,8 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   onLanguageChange?.('en')
                   setMobileMenuOpen(false)
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded transition-colors ${
-                  language === 'en' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'
-                }`}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded transition-colors ${language === 'en' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'
+                  }`}
               >
                 <span className='text-lg'>🇺🇸</span>
                 <span className='text-sm'>English</span>

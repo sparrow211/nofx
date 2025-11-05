@@ -34,7 +34,7 @@ export function ComparisonChart({ traders }: ComparisonChartProps) {
       // 使用批量API一次性获取所有trader的历史数据
       const traderIds = traders.map(trader => trader.trader_id);
       const batchData = await api.getEquityHistoryBatch(traderIds);
-      
+
       // 转换为原格式，保持与原有代码兼容
       return traders.map(trader => {
         return batchData.histories[trader.trader_id] || [];
@@ -235,7 +235,7 @@ export function ComparisonChart({ traders }: ComparisonChartProps) {
     <div>
       <div style={{ borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
         {/* NOFX Watermark */}
-        <div 
+        <div
           style={{
             position: 'absolute',
             top: '20px',
@@ -248,92 +248,92 @@ export function ComparisonChart({ traders }: ComparisonChartProps) {
             fontFamily: 'monospace'
           }}
         >
-          NOFX
+          AI
         </div>
         <ResponsiveContainer width="100%" height={520}>
-        <LineChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
-          <defs>
-            {traders.map((trader) => (
-              <linearGradient
-                key={`gradient-${trader.trader_id}`}
-                id={`gradient-${trader.trader_id}`}
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
-                <stop offset="5%" stopColor={traderColor(trader.trader_id)} stopOpacity={0.9} />
-                <stop offset="95%" stopColor={traderColor(trader.trader_id)} stopOpacity={0.2} />
-              </linearGradient>
-            ))}
-          </defs>
+          <LineChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+            <defs>
+              {traders.map((trader) => (
+                <linearGradient
+                  key={`gradient-${trader.trader_id}`}
+                  id={`gradient-${trader.trader_id}`}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop offset="5%" stopColor={traderColor(trader.trader_id)} stopOpacity={0.9} />
+                  <stop offset="95%" stopColor={traderColor(trader.trader_id)} stopOpacity={0.2} />
+                </linearGradient>
+              ))}
+            </defs>
 
-          <CartesianGrid strokeDasharray="3 3" stroke="#2B3139" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#2B3139" />
 
-          <XAxis
-            dataKey="time"
-            stroke="#5E6673"
-            tick={{ fill: '#848E9C', fontSize: 11 }}
-            tickLine={{ stroke: '#2B3139' }}
-            interval={Math.floor(displayData.length / 12)}
-            angle={-15}
-            textAnchor="end"
-            height={60}
-          />
-
-          <YAxis
-            stroke="#5E6673"
-            tick={{ fill: '#848E9C', fontSize: 12 }}
-            tickLine={{ stroke: '#2B3139' }}
-            domain={calculateYDomain()}
-            tickFormatter={(value) => `${value.toFixed(1)}%`}
-            width={60}
-          />
-
-          <Tooltip content={<CustomTooltip />} />
-
-          <ReferenceLine
-            y={0}
-            stroke="#474D57"
-            strokeDasharray="5 5"
-            strokeWidth={1.5}
-            label={{
-              value: 'Break Even',
-              fill: '#848E9C',
-              fontSize: 11,
-              position: 'right',
-            }}
-          />
-
-          {traders.map((trader) => (
-            <Line
-              key={trader.trader_id}
-              type="monotone"
-              dataKey={`${trader.trader_id}_pnl_pct`}
-              stroke={traderColor(trader.trader_id)}
-              strokeWidth={3}
-              dot={displayData.length < 50 ? { fill: traderColor(trader.trader_id), r: 3 } : false}
-              activeDot={{ r: 6, fill: traderColor(trader.trader_id), stroke: '#fff', strokeWidth: 2 }}
-              name={trader.trader_name}
-              connectNulls
+            <XAxis
+              dataKey="time"
+              stroke="#5E6673"
+              tick={{ fill: '#848E9C', fontSize: 11 }}
+              tickLine={{ stroke: '#2B3139' }}
+              interval={Math.floor(displayData.length / 12)}
+              angle={-15}
+              textAnchor="end"
+              height={60}
             />
-          ))}
 
-          <Legend
-            wrapperStyle={{ paddingTop: '20px' }}
-            iconType="line"
-            formatter={(value, entry: any) => {
-              const traderId = traders.find((t) => value === t.trader_name)?.trader_id;
-              const trader = traders.find((t) => t.trader_id === traderId);
-              return (
-                <span style={{ color: entry.color, fontWeight: 600, fontSize: '14px' }}>
-                  {trader?.trader_name} ({trader?.ai_model.toUpperCase()})
-                </span>
-              );
-            }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+            <YAxis
+              stroke="#5E6673"
+              tick={{ fill: '#848E9C', fontSize: 12 }}
+              tickLine={{ stroke: '#2B3139' }}
+              domain={calculateYDomain()}
+              tickFormatter={(value) => `${value.toFixed(1)}%`}
+              width={60}
+            />
+
+            <Tooltip content={<CustomTooltip />} />
+
+            <ReferenceLine
+              y={0}
+              stroke="#474D57"
+              strokeDasharray="5 5"
+              strokeWidth={1.5}
+              label={{
+                value: 'Break Even',
+                fill: '#848E9C',
+                fontSize: 11,
+                position: 'right',
+              }}
+            />
+
+            {traders.map((trader) => (
+              <Line
+                key={trader.trader_id}
+                type="monotone"
+                dataKey={`${trader.trader_id}_pnl_pct`}
+                stroke={traderColor(trader.trader_id)}
+                strokeWidth={3}
+                dot={displayData.length < 50 ? { fill: traderColor(trader.trader_id), r: 3 } : false}
+                activeDot={{ r: 6, fill: traderColor(trader.trader_id), stroke: '#fff', strokeWidth: 2 }}
+                name={trader.trader_name}
+                connectNulls
+              />
+            ))}
+
+            <Legend
+              wrapperStyle={{ paddingTop: '20px' }}
+              iconType="line"
+              formatter={(value, entry: any) => {
+                const traderId = traders.find((t) => value === t.trader_name)?.trader_id;
+                const trader = traders.find((t) => t.trader_id === traderId);
+                return (
+                  <span style={{ color: entry.color, fontWeight: 600, fontSize: '14px' }}>
+                    {trader?.trader_name} ({trader?.ai_model.toUpperCase()})
+                  </span>
+                );
+              }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Stats */}
@@ -344,7 +344,7 @@ export function ComparisonChart({ traders }: ComparisonChartProps) {
         </div>
         <div className="p-2 md:p-3 rounded transition-all hover:bg-opacity-50" style={{ background: 'rgba(240, 185, 11, 0.05)' }}>
           <div className="text-xs mb-1 uppercase tracking-wider" style={{ color: '#848E9C' }}>{t('dataPoints', language)}</div>
-          <div className="text-sm md:text-base font-bold mono" style={{ color: '#EAECEF' }}>{t('count', language, {count: combinedData.length})}</div>
+          <div className="text-sm md:text-base font-bold mono" style={{ color: '#EAECEF' }}>{t('count', language, { count: combinedData.length })}</div>
         </div>
         <div className="p-2 md:p-3 rounded transition-all hover:bg-opacity-50" style={{ background: 'rgba(240, 185, 11, 0.05)' }}>
           <div className="text-xs mb-1 uppercase tracking-wider" style={{ color: '#848E9C' }}>{t('currentGap', language)}</div>
