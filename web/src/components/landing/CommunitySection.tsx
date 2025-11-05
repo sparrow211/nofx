@@ -41,33 +41,33 @@ export default function CommunitySection() {
   const items: CardProps[] = [
     {
       quote:
-        '前不久非常火的 AI 量化交易系统 NOF1，在 GitHub 上有人将其复刻并开源，这就是 NOFX 项目。基于 DeepSeek、Qwen 等大语言模型，打造的通用架构 AI 交易操作系统，完成了从决策、到交易、再到复盘的闭环。GitHub: https://github.com/NoFxAiOS/nofx',
-      authorName: 'Michael Williams',
-      handle: '@MichaelWil93725',
+        '昨夜 AIBTC 自动交易忙，AI 似灵狐，于多空间狡黠游走。无需深谙交易理，财富悄然涨，一晚揽下 6% 盈光，开启躺赚新章！',
+      authorName: 'Panda',
+      handle: '@Panda',
       avatarUrl:
-        'https://pbs.twimg.com/profile_images/1767615411594694659/Mj8Fdt6o_400x400.jpg',
+        'https://q1.qlogo.cn/g?b=qq&nk=414167924&s=640',
       tweetUrl:
-        'https://twitter.com/MichaelWil93725/status/1984980920395604008',
+        '#',
       delay: 0,
     },
     {
       quote:
-        '跑了一晚上 @nofx_ai 开源的 AI 自动交易，太有意思了，就看 AI 在那一会开空一会开多，一顿操作，虽然看不懂为什么，但是一晚上帮我赚了 6% 收益',
-      authorName: 'DIŸgöd',
-      handle: '@DIYgod',
+        ' AI 自动交易，太有意思了，就看 AI 在那一会开空一会开多，一顿操作，虽然看不懂为什么，但是一晚上帮我赚了 6% 收益',
+      authorName: 'ddd',
+      handle: '@ddd',
       avatarUrl:
-        'https://pbs.twimg.com/profile_images/1628393369029181440/r23HDDJk_400x400.jpg',
-      tweetUrl: 'https://twitter.com/DIYgod/status/1984442354515017923',
+        'https://q1.qlogo.cn/g?b=qq&nk=414167955&s=640',
+      tweetUrl: '#',
       delay: 0.1,
     },
     {
       quote:
-        'Open-source NOFX revives the legendary Alpha Arena, an AI-powered crypto futures battleground. Built on DeepSeek/Qwen AI, it trades live on Binance, Hyperliquid, and Aster DEX, featuring multi-AI battles and self-learning bots',
-      authorName: 'Kai',
-      handle: '@hqmank',
+        'Dive into an all - night AIBTC auto - trading extravaganza! The AI transforms into a trading sprite, gracefully flitting between long and short markets with each move resembling a mysterious dance. Even if you don\'t grasp the trading logic, you can just sit back and reap the rewards. In a single night, it delivers a solid 6% return, making wealth growth a breeze!',
+      authorName: 'Jay',
+      handle: '@jay',
       avatarUrl:
-        'https://pbs.twimg.com/profile_images/1905441261911506945/4YhLIqUm_400x400.jpg',
-      tweetUrl: 'https://twitter.com/hqmank/status/1984227431994290340',
+        'https://q1.qlogo.cn/g?b=qq&nk=9851356&s=640',
+      tweetUrl: '#',
       delay: 0.15,
     },
   ]

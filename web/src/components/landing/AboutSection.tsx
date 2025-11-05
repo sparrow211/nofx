@@ -98,13 +98,10 @@ export default function AboutSection({ language }: AboutSectionProps) {
             >
               <Typewriter
                 lines={[
-                  '$ git clone https://github.com/tinkle-community/nofx.git',
-                  '$ cd nofx',
-                  '$ chmod +x start.sh',
-                  '$ ./start.sh start --build',
-                  t('startupMessages1', language),
-                  t('startupMessages2', language),
-                  t('startupMessages3', language),
+                  '$ 1> 配置AI模型',
+                  '$ 2> 配置交易所API密钥',
+                  '$ 3> 设置交易参数',
+                  '$ 4> 启动交易,监控绩效,优化策略'
                 ]}
                 typingSpeed={70}
                 lineDelay={900}

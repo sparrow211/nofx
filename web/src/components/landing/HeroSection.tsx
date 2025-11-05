@@ -25,15 +25,27 @@ export default function HeroSection({ language }: HeroSectionProps) {
         <div className='grid lg:grid-cols-2 gap-12 items-center'>
           {/* Left Content */}
           <motion.div className='space-y-6 relative z-10' style={{ opacity, scale }} initial='initial' animate='animate' variants={staggerContainer}>
-
-
+            <motion.div variants={fadeInUp}>
+              <motion.div
+                className='inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6'
+                style={{ background: 'rgba(240, 185, 11, 0.1)', border: '1px solid rgba(240, 185, 11, 0.2)' }}
+                whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(240, 185, 11, 0.2)' }}
+              >
+                <Sparkles className='w-4 h-4' style={{ color: 'var(--brand-yellow)' }} />
+                <span className='text-sm font-semibold' style={{ color: 'var(--brand-yellow)' }}>
+                  {t('githubStarsInDays', language)}
+                </span>
+              </motion.div>
+            </motion.div>
             <h1 className='text-5xl lg:text-7xl font-bold leading-tight' style={{ color: 'var(--brand-light-gray)' }}>
               {t('heroTitle1', language)}
               <br />
               <span style={{ color: 'var(--brand-yellow)' }}>{t('heroTitle2', language)}</span>
             </h1>
 
-
+            <motion.p className='text-xl leading-relaxed' style={{ color: 'var(--text-secondary)' }} variants={fadeInUp}>
+              {t('heroDescription', language)}
+            </motion.p>
 
 
             <motion.p className='text-xs pt-4' style={{ color: 'var(--text-tertiary)' }} variants={fadeInUp}>
@@ -72,7 +84,7 @@ export default function HeroSection({ language }: HeroSectionProps) {
             {/* Background Layer */}
             <motion.img
               src='/images/hand-bg.png'
-              alt='NF Platform Background'
+              alt='NOFX Platform Background'
               className='w-full opacity-90'
               style={{ opacity, scale }}
               whileHover={{ scale: 1.02 }}

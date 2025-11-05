@@ -216,21 +216,11 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
               {/* Only show original navigation items on home page */}
               {isHomePage && [
                 { key: 'features', label: t('features', language) },
-                { key: 'howItWorks', label: t('howItWorks', language) },
-                { key: 'GitHub', label: 'GitHub' },
-                { key: 'community', label: t('community', language) }
+                { key: 'howItWorks', label: t('howItWorks', language) }
               ].map((item) => (
                 <a
                   key={item.key}
-                  href={
-                    item.key === 'GitHub'
-                      ? 'https://github.com/tinkle-community/nofx'
-                      : item.key === 'community'
-                        ? 'https://t.me/nofx_dev_community'
-                        : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
-                  }
-                  target={item.key === 'GitHub' || item.key === 'community' ? '_blank' : undefined}
-                  rel={item.key === 'GitHub' || item.key === 'community' ? 'noopener noreferrer' : undefined}
+                  href={`#${item.key === 'features' ? 'features' : 'how-it-works'}`}
                   className='text-sm transition-colors relative group'
                   style={{ color: 'var(--brand-light-gray)' }}
                 >
@@ -502,21 +492,11 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
           {/* Original Navigation Items - Only on home page */}
           {isHomePage && [
             { key: 'features', label: t('features', language) },
-            { key: 'howItWorks', label: t('howItWorks', language) },
-            { key: 'GitHub', label: 'GitHub' },
-            { key: 'community', label: t('community', language) }
+            { key: 'howItWorks', label: t('howItWorks', language) }
           ].map((item) => (
             <a
               key={item.key}
-              href={
-                item.key === 'GitHub'
-                  ? 'https://github.com/tinkle-community/nofx'
-                  : item.key === 'community'
-                    ? 'https://t.me/nofx_dev_community'
-                    : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
-              }
-              target={item.key === 'GitHub' || item.key === 'community' ? '_blank' : undefined}
-              rel={item.key === 'GitHub' || item.key === 'community' ? 'noopener noreferrer' : undefined}
+              href={`#${item.key === 'features' ? 'features' : 'how-it-works'}`}
               className='block text-sm py-2'
               style={{ color: 'var(--brand-light-gray)' }}
             >
