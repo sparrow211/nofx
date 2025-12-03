@@ -76,9 +76,9 @@ export function RegisterPage() {
       setQrCodeURL(result.qrCodeURL || '')
       setStep('setup-otp')
     } else {
+      // Only business errors reach here (system/network errors shown via toast)
       const msg = result.message || t('registrationFailed', language)
       setError(msg)
-      toast.error(msg)
     }
 
     setLoading(false)
@@ -298,37 +298,8 @@ export function RegisterPage() {
                     color: 'var(--binance-red)',
                   }}
                 >
-                  <div
-                    className="mb-1"
-                    style={{ color: 'var(--brand-light-gray)' }}
-                  >
-                    {t('passwordRequirements', language)}
+                  {error}
                   </div>
-                  <PasswordChecklist
-                    rules={[
-                      'minLength',
-                      'capital',
-                      'lowercase',
-                      'number',
-                      'specialChar',
-                      'match',
-                    ]}
-                    minLength={8}
-                    specialCharsRegex={/[@#$%!&*?]/}
-                    value={password}
-                    valueAgain={confirmPassword}
-                    messages={{
-                      minLength: t('passwordRuleMinLength', language),
-                      capital: t('passwordRuleUppercase', language),
-                      lowercase: t('passwordRuleLowercase', language),
-                      number: t('passwordRuleNumber', language),
-                      specialChar: t('passwordRuleSpecial', language),
-                      match: t('passwordRuleMatch', language),
-                    }}
-                    className="space-y-1"
-                    onChange={(isValid) => setPasswordValid(isValid)}
-                  />
-                </div>
               )}
 
               <button
