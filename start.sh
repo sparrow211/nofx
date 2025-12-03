@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # ═══════════════════════════════════════════════════════════════
 # NOFX AI Trading System - Docker Quick Start Script

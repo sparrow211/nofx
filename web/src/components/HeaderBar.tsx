@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Menu, X, ChevronDown } from 'lucide-react'
 import { t, type Language } from '../i18n/translations'
 import { Container } from './Container'
+import { useSystemConfig } from '../hooks/useSystemConfig'
 
 interface HeaderBarProps {
   onLoginClick?: () => void
@@ -33,6 +34,8 @@ export default function HeaderBar({
   const [userDropdownOpen, setUserDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const userDropdownRef = useRef<HTMLDivElement>(null)
+  const { config: systemConfig } = useSystemConfig()
+  const registrationEnabled = systemConfig?.registration_enabled !== false
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -65,12 +68,12 @@ export default function HeaderBar({
           to="/"
           className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer"
         >
-          <img src="/icons/nofx.svg" alt="NOFX Logo" className="w-8 h-8" />
+          <img src="/icons/aibtc.svg" alt="AIBTC Logo" className="w-8 h-8" />
           <span
             className="text-xl font-bold"
             style={{ color: 'var(--brand-yellow)' }}
           >
-            NOFX
+            AIBTC
           </span>
           <span
             className="text-sm hidden sm:block"
@@ -334,28 +337,10 @@ export default function HeaderBar({
               [
                 { key: 'features', label: t('features', language) },
                 { key: 'howItWorks', label: t('howItWorks', language) },
-                { key: 'GitHub', label: 'GitHub' },
-                { key: 'community', label: t('community', language) },
               ].map((item) => (
                 <a
                   key={item.key}
-                  href={
-                    item.key === 'GitHub'
-                      ? 'https://github.com/tinkle-community/nofx'
-                      : item.key === 'community'
-                        ? 'https://t.me/nofx_dev_community'
-                        : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
-                  }
-                  target={
-                    item.key === 'GitHub' || item.key === 'community'
-                      ? '_blank'
-                      : undefined
-                  }
-                  rel={
-                    item.key === 'GitHub' || item.key === 'community'
-                      ? 'noopener noreferrer'
-                      : undefined
-                  }
+                  href={`#${item.key === 'features' ? 'features' : 'how-it-works'}`}
                   className="text-sm transition-colors relative group"
                   style={{ color: 'var(--brand-light-gray)' }}
                 >
@@ -464,16 +449,18 @@ export default function HeaderBar({
                   >
                     {t('signIn', language)}
                   </a>
-                  <a
-                    href="/register"
-                    className="px-4 py-2 rounded font-semibold text-sm transition-colors hover:opacity-90"
-                    style={{
-                      background: 'var(--brand-yellow)',
-                      color: 'var(--brand-black)',
-                    }}
-                  >
-                    {t('signUp', language)}
-                  </a>
+                  {registrationEnabled && (
+                    <a
+                      href="/register"
+                      className="px-4 py-2 rounded font-semibold text-sm transition-colors hover:opacity-90"
+                      style={{
+                        background: 'var(--brand-yellow)',
+                        color: 'var(--brand-black)',
+                      }}
+                    >
+                      {t('signUp', language)}
+                    </a>
+                  )}
                 </div>
               )
             )}
@@ -762,28 +749,10 @@ export default function HeaderBar({
             [
               { key: 'features', label: t('features', language) },
               { key: 'howItWorks', label: t('howItWorks', language) },
-              { key: 'GitHub', label: 'GitHub' },
-              { key: 'community', label: t('community', language) },
             ].map((item) => (
-              <a
+                <a
                 key={item.key}
-                href={
-                  item.key === 'GitHub'
-                    ? 'https://github.com/tinkle-community/nofx'
-                    : item.key === 'community'
-                      ? 'https://t.me/nofx_dev_community'
-                      : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
-                }
-                target={
-                  item.key === 'GitHub' || item.key === 'community'
-                    ? '_blank'
-                    : undefined
-                }
-                rel={
-                  item.key === 'GitHub' || item.key === 'community'
-                    ? 'noopener noreferrer'
-                    : undefined
-                }
+                href={`#${item.key === 'features' ? 'features' : 'how-it-works'}`}
                 className="block text-sm py-2"
                 style={{ color: 'var(--brand-light-gray)' }}
               >
@@ -901,17 +870,19 @@ export default function HeaderBar({
                 >
                   {t('signIn', language)}
                 </a>
-                <a
-                  href="/register"
-                  className="block w-full px-4 py-2 rounded font-semibold text-sm text-center transition-colors"
-                  style={{
-                    background: 'var(--brand-yellow)',
-                    color: 'var(--brand-black)',
-                  }}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {t('signUp', language)}
-                </a>
+                {registrationEnabled && (
+                  <a
+                    href="/register"
+                    className="block w-full px-4 py-2 rounded font-semibold text-sm text-center transition-colors"
+                    style={{
+                      background: 'var(--brand-yellow)',
+                      color: 'var(--brand-black)',
+                    }}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {t('signUp', language)}
+                  </a>
+                )}
               </div>
             )}
         </div>

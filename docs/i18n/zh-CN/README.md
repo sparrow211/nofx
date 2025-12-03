@@ -57,13 +57,13 @@
 ### 👥 核心团队
 
 - **Tinkle** - [@Web3Tinkle](https://x.com/Web3Tinkle)
-- **Tintin** - [@Tintinx2021](https://x.com/Tintinx2021)
+- **Zack** - [@0x_ZackH](https://x.com/0x_ZackH)
 
 ### 💼 种子轮融资进行中
 
 我们正在进行**种子轮融资**。
 
-**投资咨询**，请通过 Twitter 私信联系 **Tinkle** 或 **Tintin**。
+**投资咨询**，请通过 Twitter 私信联系 **Tinkle** 或 **Zack**。
 
 **商务合作**，请私信官方推特 [@nofx_ai](https://x.com/nofx_ai)。
 

@@ -48,6 +48,7 @@ type PositionInfo struct {
 type AccountInfo struct {
 	TotalEquity      float64 `json:"total_equity"`      // 账户净值
 	AvailableBalance float64 `json:"available_balance"` // 可用余额
+	UnrealizedPnL    float64 `json:"unrealized_pnl"`    // 未实现盈亏
 	TotalPnL         float64 `json:"total_pnl"`         // 总盈亏
 	TotalPnLPct      float64 `json:"total_pnl_pct"`     // 总盈亏百分比
 	MarginUsed       float64 `json:"margin_used"`       // 已用保证金
@@ -120,12 +121,12 @@ type FullDecision struct {
 }
 
 // GetFullDecision 获取AI的完整交易决策（批量分析所有币种和持仓）
-func GetFullDecision(ctx *Context, mcpClient *mcp.Client) (*FullDecision, error) {
+func GetFullDecision(ctx *Context, mcpClient mcp.AIClient) (*FullDecision, error) {
 	return GetFullDecisionWithCustomPrompt(ctx, mcpClient, "", false, "")
 }
 
 // GetFullDecisionWithCustomPrompt 获取AI的完整交易决策（支持自定义prompt和模板选择）
-func GetFullDecisionWithCustomPrompt(ctx *Context, mcpClient *mcp.Client, customPrompt string, overrideBase bool, templateName string) (*FullDecision, error) {
+func GetFullDecisionWithCustomPrompt(ctx *Context, mcpClient mcp.AIClient, customPrompt string, overrideBase bool, templateName string) (*FullDecision, error) {
 	// 1. 为所有币种获取市场数据
 	if err := fetchMarketDataForContext(ctx); err != nil {
 		return nil, fmt.Errorf("获取市场数据失败: %w", err)
@@ -329,7 +330,7 @@ func buildSystemPrompt(accountEquity float64, btcEthLeverage, altcoinLeverage in
 	sb.WriteString("1. 风险回报比: 必须 ≥ 1:3（冒1%风险，赚3%+收益）\n")
 	sb.WriteString("2. 最多持仓: 3个币种（质量>数量）\n")
 	sb.WriteString(fmt.Sprintf("3. 单币仓位: 山寨%.0f-%.0f U | BTC/ETH %.0f-%.0f U\n",
-		accountEquity*0.8, accountEquity*1.5, accountEquity*5, accountEquity*10))
+		accountEquity*0.8, accountEquity*10, accountEquity*5, accountEquity*10))
 	sb.WriteString(fmt.Sprintf("4. 杠杆限制: **山寨币最大%dx杠杆** | **BTC/ETH最大%dx杠杆** (⚠️ 严格执行，不可超过)\n", altcoinLeverage, btcEthLeverage))
 	sb.WriteString("5. 保证金: 总使用率 ≤ 90%\n")
 	sb.WriteString("6. 开仓金额: 建议 **≥12 USDT** (交易所最小名义价值 10 USDT + 安全边际)\n\n")
@@ -727,8 +728,8 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 	// 开仓操作必须提供完整参数
 	if d.Action == "open_long" || d.Action == "open_short" {
 		// 根据币种使用配置的杠杆上限
-		maxLeverage := altcoinLeverage          // 山寨币使用配置的杠杆
-		maxPositionValue := accountEquity * 1.5 // 山寨币最多1.5倍账户净值
+		maxLeverage := altcoinLeverage           // 山寨币使用配置的杠杆
+		maxPositionValue := accountEquity * 10.0 // 山寨币最多10倍账户净值
 		if d.Symbol == "BTCUSDT" || d.Symbol == "ETHUSDT" {
 			maxLeverage = btcEthLeverage          // BTC和ETH使用配置的杠杆
 			maxPositionValue = accountEquity * 10 // BTC/ETH最多10倍账户净值
@@ -768,7 +769,7 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 			if d.Symbol == "BTCUSDT" || d.Symbol == "ETHUSDT" {
 				return fmt.Errorf("BTC/ETH单币种仓位价值不能超过%.0f USDT（10倍账户净值），实际: %.0f", maxPositionValue, d.PositionSizeUSD)
 			} else {
-				return fmt.Errorf("山寨币单币种仓位价值不能超过%.0f USDT（1.5倍账户净值），实际: %.0f", maxPositionValue, d.PositionSizeUSD)
+				return fmt.Errorf("山寨币单币种仓位价值不能超过%.0f USDT（10倍账户净值），实际: %.0f", maxPositionValue, d.PositionSizeUSD)
 			}
 		}
 		if d.StopLoss <= 0 || d.TakeProfit <= 0 {

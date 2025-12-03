@@ -50,13 +50,13 @@
 ### 👥 Основна Команда
 
 - **Tinkle** - [@Web3Tinkle](https://x.com/Web3Tinkle)
-- **Tintin** - [@Tintinx2021](https://x.com/Tintinx2021)
+- **Zack** - [@0x_ZackH](https://x.com/0x_ZackH)
 
 ### 💼 Відкритий Посівний Раунд Фінансування
 
 Ми зараз залучаємо **посівний раунд**.
 
-**З питань інвестицій**, пишіть в DM **Tinkle** або **Tintin** в Twitter.
+**З питань інвестицій**, пишіть в DM **Tinkle** або **Zack** в Twitter.
 
 **З питань партнерства та співпраці**, пишіть в DM нашого офіційного Twitter [@nofx_ai](https://x.com/nofx_ai).
 
