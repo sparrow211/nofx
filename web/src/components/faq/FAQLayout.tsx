@@ -135,7 +135,6 @@ export function FAQLayout({ language }: FAQLayoutProps) {
       </div>
 
       {/* Contact Section */}
-      
     </Container>
   )
 }

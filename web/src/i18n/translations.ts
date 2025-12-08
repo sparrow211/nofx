@@ -1838,7 +1838,7 @@ export const translations = {
 
     faqAiLearningFailed: 'AI 学习数据加载失败',
     faqAiLearningFailedAnswer:
-      '原因：历史数据不足（需要完成交易）；',
+      '原因：TA-Lib 库未正确安装；历史数据不足（需要完成交易）；环境配置问题。安装 TA-Lib：pip install TA-Lib 或检查系统依赖。',
 
     faqConfigNotEffective: '配置文件修改不生效',
     faqConfigNotEffectiveAnswer:
