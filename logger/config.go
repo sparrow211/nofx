@@ -1,6 +1,8 @@
 package logger
 
 import (
+	"fmt"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -23,6 +25,37 @@ func (c *Config) SetDefaults() {
 	if c.Level == "" {
 		c.Level = "info"
 	}
+	
+	// 如果Telegram配置存在，设置其默认值
+	if c.Telegram != nil {
+		c.Telegram.SetDefaults()
+	}
+}
+
+// Validate 验证配置是否有效
+func (c *Config) Validate() error {
+	if c.Telegram != nil && c.Telegram.Enabled {
+		return c.Telegram.Validate()
+	}
+	return nil
+}
+
+// SetDefaults 为TelegramConfig设置默认值
+func (tc *TelegramConfig) SetDefaults() {
+	if tc.MinLevel == "" {
+		tc.MinLevel = "error"
+	}
+}
+
+// Validate 验证TelegramConfig是否有效
+func (tc *TelegramConfig) Validate() error {
+	if tc.BotToken == "" {
+		return fmt.Errorf("telegram bot_token 不能为空")
+	}
+	if tc.ChatID == 0 {
+		return fmt.Errorf("telegram chat_id 不能为空")
+	}
+	return nil
 }
 
 // GetLogrusLevels 返回要推送到Telegram的日志级别

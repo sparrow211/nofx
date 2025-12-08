@@ -175,6 +175,56 @@ check_encryption() {
 }
 
 # ------------------------------------------------------------------------
+# Validation: Telegram Configuration (Optional)
+# ------------------------------------------------------------------------
+check_telegram() {
+    print_info "检查 Telegram 通知配置..."
+    
+    local telegram_enabled=$(grep "^TELEGRAM_ENABLED=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d ' ')
+    
+    if [ "$telegram_enabled" != "true" ]; then
+        print_info "  Telegram 通知未启用 (可选功能)"
+        return 0
+    fi
+    
+    # 检查必要配置
+    local has_error=false
+    
+    if ! is_env_configured "TELEGRAM_BOT_TOKEN"; then
+        print_warning "  ⚠️  TELEGRAM_BOT_TOKEN 未配置"
+        has_error=true
+    else
+        print_success "  • TELEGRAM_BOT_TOKEN: OK"
+    fi
+    
+    if ! is_env_configured "TELEGRAM_CHAT_ID"; then
+        print_warning "  ⚠️  TELEGRAM_CHAT_ID 未配置"
+        has_error=true
+    else
+        print_success "  • TELEGRAM_CHAT_ID: OK"
+    fi
+    
+    local min_level=$(grep "^TELEGRAM_MIN_LEVEL=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d ' ')
+    if [ -z "$min_level" ]; then
+        print_info "  • TELEGRAM_MIN_LEVEL: 使用默认值 (error)"
+    else
+        print_success "  • TELEGRAM_MIN_LEVEL: $min_level"
+    fi
+    
+    if [ "$has_error" = true ]; then
+        echo ""
+        print_warning "Telegram 通知配置不完整，将无法使用该功能"
+        print_info "完整配置方法："
+        print_info "  1. 联系 @BotFather 创建 Bot 并获取 Token"
+        print_info "  2. 联系 @userinfobot 获取你的 Chat ID"
+        print_info "  3. 在 .env 中设置 TELEGRAM_BOT_TOKEN 和 TELEGRAM_CHAT_ID"
+        echo ""
+    else
+        print_success "Telegram 通知配置完整"
+    fi
+}
+
+# ------------------------------------------------------------------------
 # Validation: Configuration File (config.json) - BASIC SETTINGS ONLY
 # ------------------------------------------------------------------------
 check_config() {
@@ -379,6 +429,7 @@ show_help() {
     echo "  clean              清理所有容器和数据"
     echo "  update             更新代码并重启"
     echo "  regenerate-keys    重新生成所有加密密钥（慎用）"
+    echo "  test-telegram      测试 Telegram 通知配置"
     echo "  help               显示此帮助信息"
     echo ""
     echo "示例:"
@@ -400,6 +451,7 @@ main() {
         start)
             check_env
             check_encryption
+            check_telegram
             check_config
             check_database
             start "$2"
@@ -424,6 +476,17 @@ main() {
             ;;
         regenerate-keys)
             regenerate_keys
+            ;;
+        test-telegram)
+            check_env
+            print_info "运行 Telegram 配置测试..."
+            if command -v go &> /dev/null; then
+                go run test_telegram_status.go
+            else
+                print_error "Go 未安装，无法运行测试"
+                print_info "请手动运行: go run test_telegram_status.go"
+                exit 1
+            fi
             ;;
         help|--help|-h)
             show_help

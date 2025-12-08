@@ -36,7 +36,7 @@ export function RegisterPage() {
     // 获取系统配置，检查是否开启内测模式和注册功能
     getSystemConfig()
       .then((config) => {
-        setBetaMode(config.beta_mode || false)
+        setBetaMode(config.beta_mode || true)
         setRegistrationEnabled(config.registration_enabled !== false)
       })
       .catch((err) => {
@@ -267,23 +267,18 @@ export function RegisterPage() {
                   <input
                     type="text"
                     value={betaCode}
-                    onChange={(e) =>
-                      setBetaCode(
-                        e.target.value.replace(/[^a-z0-9]/gi, '').toLowerCase()
-                      )
-                    }
+                    onChange={(e) => setBetaCode(e.target.value.trim())}
                     className="w-full px-3 py-2 rounded font-mono"
                     style={{
                       background: '#0B0E11',
                       border: '1px solid #2B3139',
                       color: '#EAECEF',
                     }}
-                    placeholder="请输入6位内测码"
-                    maxLength={6}
+                    placeholder="请输入内测码"
                     required={betaMode}
                   />
                   <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
-                    内测码由6位字母数字组成，区分大小写
+                    请输入正确的内测码
                   </p>
                 </div>
               )}
@@ -297,7 +292,7 @@ export function RegisterPage() {
                   }}
                 >
                   {error}
-                  </div>
+                </div>
               )}
 
               <button

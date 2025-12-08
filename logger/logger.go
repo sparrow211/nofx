@@ -13,6 +13,8 @@ import (
 var (
 	// Log is the global logger instance
 	Log *logrus.Logger
+	// telegramHook 全局Telegram Hook实例
+	telegramHook *TelegramHook
 )
 
 // compactFormatter is a custom formatter for cleaner log output
@@ -69,6 +71,11 @@ func Init(cfg *Config) error {
 	// Set default values
 	cfg.SetDefaults()
 
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("配置验证失败: %w", err)
+	}
+
 	// Set log level
 	level, err := logrus.ParseLevel(cfg.Level)
 	if err != nil {
@@ -81,6 +88,24 @@ func Init(cfg *Config) error {
 	Log.SetOutput(os.Stdout)
 	Log.SetReportCaller(true)
 
+	// Initialize Telegram Hook if configured
+	if cfg.Telegram != nil && cfg.Telegram.Enabled {
+		hook, err := NewTelegramHook(cfg.Telegram)
+		if err != nil {
+			Log.Warnf("⚠️  Failed to initialize Telegram hook: %v", err)
+		} else {
+			Log.AddHook(hook)
+			telegramHook = hook
+			minLevel := cfg.Telegram.MinLevel
+			if minLevel == "" {
+				minLevel = "error"
+			}
+			Log.Infof("✅ Telegram notification enabled (min_level: %s, chat_id: %d)", minLevel, cfg.Telegram.ChatID)
+		}
+	} else if cfg.Telegram != nil && !cfg.Telegram.Enabled {
+		Log.Info("ℹ️  Telegram notification disabled in configuration")
+	}
+
 	return nil
 }
 
@@ -90,9 +115,98 @@ func InitWithSimpleConfig(level string) error {
 	return Init(&Config{Level: level})
 }
 
+// InitFromEnv 从环境变量初始化logger（包括Telegram配置）
+func InitFromEnv() error {
+	cfg := &Config{
+		Level: os.Getenv("LOG_LEVEL"),
+	}
+
+	// Load Telegram config from environment
+	telegramEnabled := os.Getenv("TELEGRAM_ENABLED")
+	
+	// 调试信息：显示读取到的环境变量
+	fmt.Printf("[DEBUG] TELEGRAM_ENABLED=%q\n", telegramEnabled)
+	
+	if telegramEnabled == "true" {
+		botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+		chatIDStr := os.Getenv("TELEGRAM_CHAT_ID")
+		chatID := parseChatID(chatIDStr)
+		minLevel := os.Getenv("TELEGRAM_MIN_LEVEL")
+		
+		fmt.Printf("[DEBUG] TELEGRAM_BOT_TOKEN=%s\n", maskToken(botToken))
+		fmt.Printf("[DEBUG] TELEGRAM_CHAT_ID=%q (parsed: %d)\n", chatIDStr, chatID)
+		fmt.Printf("[DEBUG] TELEGRAM_MIN_LEVEL=%q\n", minLevel)
+
+		// 只有当必要字段不为空时才创建TelegramConfig
+		if botToken != "" && chatID != 0 {
+			telegramCfg := &TelegramConfig{
+				Enabled:  true,
+				BotToken: botToken,
+				ChatID:   chatID,
+				MinLevel: minLevel,
+			}
+			// 设置默认值（确保MinLevel有默认值）
+			telegramCfg.SetDefaults()
+			cfg.Telegram = telegramCfg
+			fmt.Printf("[DEBUG] Telegram config created successfully\n")
+		} else {
+			// 配置不完整时给出详细警告
+			fmt.Printf("[WARN] Telegram enabled but configuration incomplete:\n")
+			fmt.Printf("       - bot_token present: %v\n", botToken != "")
+			fmt.Printf("       - chat_id present: %v (value: %d)\n", chatID != 0, chatID)
+			fmt.Printf("       请在 .env 中正确配置 TELEGRAM_BOT_TOKEN 和 TELEGRAM_CHAT_ID\n")
+		}
+	} else {
+		fmt.Printf("[DEBUG] Telegram disabled (TELEGRAM_ENABLED != 'true')\n")
+	}
+
+	return Init(cfg)
+}
+
+// maskToken 隐藏 Token 的敏感部分
+func maskToken(token string) string {
+	if token == "" {
+		return "(未设置)"
+	}
+	if len(token) < 10 {
+		return "(已设置，但太短)"
+	}
+	return fmt.Sprintf("%s...%s", token[:8], token[len(token)-4:])
+}
+
+// parseChatID 解析ChatID字符串为int64
+func parseChatID(s string) int64 {
+	if s == "" {
+		return 0
+	}
+	var chatID int64
+	fmt.Sscanf(s, "%d", &chatID)
+	return chatID
+}
+
 // Shutdown gracefully shuts down the logger
 func Shutdown() {
-	// Reserved for future extensions
+	if telegramHook != nil {
+		Info("📤 Shutting down Telegram notification...")
+		telegramHook.Stop()
+		Info("✅ Telegram notification stopped")
+	}
+}
+
+// IsTelegramEnabled 检查Telegram通知是否已启用
+func IsTelegramEnabled() bool {
+	return telegramHook != nil && telegramHook.enabled
+}
+
+// GetTelegramStatus 获取Telegram通知状态（用于调试）
+func GetTelegramStatus() string {
+	if telegramHook == nil {
+		return "未配置"
+	}
+	if !telegramHook.enabled {
+		return "已禁用"
+	}
+	return fmt.Sprintf("已启用 (levels: %v)", len(telegramHook.levels))
 }
 
 // ============================================================================

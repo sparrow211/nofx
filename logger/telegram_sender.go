@@ -58,7 +58,7 @@ func (s *TelegramSender) SendAsync(message string) {
 		// 成功写入缓冲区
 	default:
 		// 缓冲区满，丢弃消息（不阻塞主流程）
-		fmt.Printf("[Telegram] 消息缓冲区已满，消息被丢弃\n")
+		fmt.Printf("[Telegram] ⚠️  消息缓冲区已满 (%d/%d)，消息被丢弃\n", len(s.msgChan), cap(s.msgChan))
 	}
 }
 
@@ -83,22 +83,29 @@ func (s *TelegramSender) listenAndSend() {
 
 // sendWithRetry 发送消息（带重试）
 func (s *TelegramSender) sendWithRetry(message string) {
-	var err error
+	var lastErr error
 	for i := 0; i < s.retryCount; i++ {
-		err = s.send(message)
+		err := s.send(message)
 		if err == nil {
-			return // 发送成功
+			// 发送成功
+			if i > 0 {
+				fmt.Printf("[Telegram] ✅ 消息发送成功（第%d次重试）\n", i+1)
+			}
+			return
 		}
 
+		lastErr = err
 		// 重试前等待
 		if i < s.retryCount-1 {
+			fmt.Printf("[Telegram] ⚠️  发送失败，%v后重试... (%d/%d): %v\n", 
+				s.retryInterval, i+1, s.retryCount, err)
 			time.Sleep(s.retryInterval)
 		}
 	}
 
 	// 所有重试都失败
-	if err != nil {
-		fmt.Printf("[Telegram] 发送消息失败（已重试%d次）: %v\n", s.retryCount, err)
+	if lastErr != nil {
+		fmt.Printf("[Telegram] ❌ 发送消息失败（已重试%d次）: %v\n", s.retryCount, lastErr)
 	}
 }
 

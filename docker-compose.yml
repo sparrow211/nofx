@@ -20,6 +20,11 @@ services:
       - DATA_ENCRYPTION_KEY=${DATA_ENCRYPTION_KEY}  # 数据库加密密钥
       - JWT_SECRET=${JWT_SECRET}  # JWT认证密钥
       - RSA_PRIVATE_KEY=${RSA_PRIVATE_KEY}  # RSA私钥（客户端加密）
+      # Telegram 通知配置（可选）
+      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-false}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TELEGRAM_MIN_LEVEL=${TELEGRAM_MIN_LEVEL:-error}
     networks:
       - nofx-network
     healthcheck:

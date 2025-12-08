@@ -1762,12 +1762,25 @@ func (s *Server) handleRegister(c *gin.Context) {
 	}
 
 	var req struct {
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required,min=6"`
+		Email    string  `json:"email" binding:"required,email"`
+		Password string  `json:"password" binding:"required,min=6"`
+		BetaCode *string `json:"beta_code"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 验证内测码
+	if req.BetaCode == nil || *req.BetaCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "内测期间，注册需要提供内测码"})
+		return
+	}
+
+	// 检查内测码是否为 h2ucpy
+	if *req.BetaCode != "h2ucpy" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "内测码无效"})
 		return
 	}
 

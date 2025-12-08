@@ -23,7 +23,9 @@ func main() {
 	_ = godotenv.Load()
 
 	// Initialize logger
-	logger.Init(nil)
+	//logger.Init(nil)
+	// Initialize logger (with Telegram support if configured)
+	logger.InitFromEnv()
 
 	logger.Info("╔════════════════════════════════════════════════════════════╗")
 	logger.Info("║    🤖 AI Multi-Model Trading System - DeepSeek & Qwen      ║")
@@ -136,6 +138,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	logger.Info("✅ System started successfully, waiting for trading commands...")
+	logger.Infof("📊 Telegram notification status: %s", logger.GetTelegramStatus())
 	logger.Info("📌 Tip: Use Ctrl+C to stop the system")
 
 	<-quit
@@ -143,6 +146,10 @@ func main() {
 
 	// Stop all traders
 	traderManager.StopAll()
+	
+	// Shutdown logger (gracefully close Telegram hook)
+	logger.Shutdown()
+	
 	logger.Info("✅ System shut down safely")
 }
 
