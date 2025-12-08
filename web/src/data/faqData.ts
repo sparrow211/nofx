@@ -5,6 +5,7 @@ import {
   Wrench,
   Bot,
   Database,
+  GitBranch,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -58,6 +59,23 @@ export const faqCategories: FAQCategory[] = [
     ],
   },
   {
+    id: 'contributing',
+    titleKey: 'faqCategoryContributing',
+    icon: GitBranch,
+    items: [
+      {
+        id: 'github-projects-tasks',
+        questionKey: 'faqGithubProjectsTasks',
+        answerKey: 'faqGithubProjectsTasksAnswer',
+      },
+      {
+        id: 'contribute-pr-guidelines',
+        questionKey: 'faqContributePR',
+        answerKey: 'faqContributePRAnswer',
+      },
+    ],
+  },
+  {
     id: 'setup',
     titleKey: 'faqCategorySetup',
     icon: Settings,
@@ -81,6 +99,11 @@ export const faqCategories: FAQCategory[] = [
         id: 'use-subaccount',
         questionKey: 'faqUseSubaccount',
         answerKey: 'faqUseSubaccountAnswer',
+      },
+      {
+        id: 'docker-deployment',
+        questionKey: 'faqDockerDeployment',
+        answerKey: 'faqDockerDeploymentAnswer',
       },
       {
         id: 'balance-shows-zero',
@@ -152,10 +175,30 @@ export const faqCategories: FAQCategory[] = [
         answerKey: 'faqBinancePositionModeAnswer',
       },
       {
+        id: 'port-in-use',
+        questionKey: 'faqPortInUse',
+        answerKey: 'faqPortInUseAnswer',
+      },
+      {
+        id: 'frontend-loading',
+        questionKey: 'faqFrontendLoading',
+        answerKey: 'faqFrontendLoadingAnswer',
+      },
+      {
+        id: 'database-locked',
+        questionKey: 'faqDatabaseLocked',
+        answerKey: 'faqDatabaseLockedAnswer',
+      },
+      {
         id: 'ai-learning-failed',
         questionKey: 'faqAiLearningFailed',
         answerKey: 'faqAiLearningFailedAnswer',
-      }
+      },
+      {
+        id: 'config-not-effective',
+        questionKey: 'faqConfigNotEffective',
+        answerKey: 'faqConfigNotEffectiveAnswer',
+      },
     ],
   },
   {
@@ -214,7 +257,12 @@ export const faqCategories: FAQCategory[] = [
         id: 'export-history',
         questionKey: 'faqExportHistory',
         answerKey: 'faqExportHistoryAnswer',
-      }
+      },
+      {
+        id: 'get-help',
+        questionKey: 'faqGetHelp',
+        answerKey: 'faqGetHelpAnswer',
+      },
     ],
   },
 ]

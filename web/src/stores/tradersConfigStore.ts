@@ -2,18 +2,12 @@ import { create } from 'zustand'
 import type { AIModel, Exchange } from '../types'
 import { api } from '../lib/api'
 
-interface SignalSource {
-  coinPoolUrl: string
-  oiTopUrl: string
-}
-
 interface TradersConfigState {
   // 数据
   allModels: AIModel[]
   allExchanges: Exchange[]
   supportedModels: AIModel[]
   supportedExchanges: Exchange[]
-  userSignalSource: SignalSource
 
   // 计算属性
   configuredModels: AIModel[]
@@ -24,7 +18,6 @@ interface TradersConfigState {
   setAllExchanges: (exchanges: Exchange[]) => void
   setSupportedModels: (models: AIModel[]) => void
   setSupportedExchanges: (exchanges: Exchange[]) => void
-  setUserSignalSource: (source: SignalSource) => void
 
   // 异步加载
   loadConfigs: (user: any, token: string | null) => Promise<void>
@@ -38,7 +31,6 @@ const initialState = {
   allExchanges: [],
   supportedModels: [],
   supportedExchanges: [],
-  userSignalSource: { coinPoolUrl: '', oiTopUrl: '' },
   configuredModels: [],
   configuredExchanges: [],
 }
@@ -73,7 +65,6 @@ export const useTradersConfigStore = create<TradersConfigState>((set, get) => ({
 
   setSupportedModels: (models) => set({ supportedModels: models }),
   setSupportedExchanges: (exchanges) => set({ supportedExchanges: exchanges }),
-  setUserSignalSource: (source) => set({ userSignalSource: source }),
 
   loadConfigs: async (user, token) => {
     if (!user || !token) {
@@ -108,18 +99,7 @@ export const useTradersConfigStore = create<TradersConfigState>((set, get) => ({
       get().setAllExchanges(exchangeConfigs)
       get().setSupportedModels(supportedModels)
       get().setSupportedExchanges(supportedExchanges)
-
-      // 加载用户信号源配置
-      try {
-        const signalSource = await api.getUserSignalSource()
-        get().setUserSignalSource({
-          coinPoolUrl: signalSource.coin_pool_url || '',
-          oiTopUrl: signalSource.oi_top_url || '',
-        })
       } catch (error) {
-        console.log('📡 用户信号源配置暂未设置')
-      }
-    } catch (error) {
       console.error('Failed to load configs:', error)
     }
   },
