@@ -120,7 +120,7 @@ func (h *TelegramHook) formatMessage(entry *logrus.Entry) string {
 
 	// 基本信息
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("%s *NOFX %s*\n", levelEmoji, strings.ToUpper(entry.Level.String())))
+	builder.WriteString(fmt.Sprintf("%s *AIBTC %s*\n", levelEmoji, strings.ToUpper(entry.Level.String())))
 	builder.WriteString("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n")
 	builder.WriteString(fmt.Sprintf("📝 *消息*: %s\n\n", escapeMarkdown(entry.Message)))
 
