@@ -33,11 +33,11 @@ describe('RegistrationDisabled Component', () => {
       expect(container).toBeTruthy()
     })
 
-    it('should display the AIBTC logo', () => {
+    it('should display the NoFx logo', () => {
       renderComponent()
-      const logo = screen.getByAltText('AIBTC Logo')
+      const logo = screen.getByAltText('NoFx Logo')
       expect(logo).toBeTruthy()
-      expect(logo.getAttribute('src')).toBe('/icons/aibtc.svg')
+      expect(logo.getAttribute('src')).toBe('/icons/nofx.svg')
     })
 
     it('should display registration closed heading', () => {

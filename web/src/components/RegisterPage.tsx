@@ -36,7 +36,7 @@ export function RegisterPage() {
     // 获取系统配置，检查是否开启内测模式和注册功能
     getSystemConfig()
       .then((config) => {
-        setBetaMode(config.beta_mode || true)
+        setBetaMode(config.beta_mode || false)
         setRegistrationEnabled(config.registration_enabled !== false)
       })
       .catch((err) => {
@@ -117,8 +117,8 @@ export function RegisterPage() {
         <div className="text-center mb-8">
           <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center">
             <img
-              src="/icons/aibtc.svg"
-              alt="AIBTC Logo"
+              src="/icons/nofx.svg"
+              alt="NoFx Logo"
               className="w-16 h-16 object-contain"
             />
           </div>
@@ -267,18 +267,23 @@ export function RegisterPage() {
                   <input
                     type="text"
                     value={betaCode}
-                    onChange={(e) => setBetaCode(e.target.value.trim())}
+                    onChange={(e) =>
+                      setBetaCode(
+                        e.target.value.replace(/[^a-z0-9]/gi, '').toLowerCase()
+                      )
+                    }
                     className="w-full px-3 py-2 rounded font-mono"
                     style={{
                       background: '#0B0E11',
                       border: '1px solid #2B3139',
                       color: '#EAECEF',
                     }}
-                    placeholder="请输入内测码"
+                    placeholder="请输入6位内测码"
+                    maxLength={6}
                     required={betaMode}
                   />
                   <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
-                    请输入正确的内测码
+                    内测码由6位字母数字组成，区分大小写
                   </p>
                 </div>
               )}

@@ -33,6 +33,7 @@ const (
 	okxCancelAlgoPath    = "/api/v5/trade/cancel-algos"
 	okxAlgoPendingPath   = "/api/v5/trade/orders-algo-pending"
 	okxPositionModePath  = "/api/v5/account/set-position-mode"
+	okxAccountConfigPath = "/api/v5/account/config"
 )
 
 // OKXTrader OKX futures trader
@@ -40,6 +41,12 @@ type OKXTrader struct {
 	apiKey     string
 	secretKey  string
 	passphrase string
+
+	// Margin mode setting
+	isCrossMargin bool
+
+	// Position mode: "long_short_mode" (hedge) or "net_mode" (one-way)
+	positionMode string
 
 	// HTTP client (proxy disabled)
 	httpClient *http.Client
@@ -65,13 +72,14 @@ type OKXTrader struct {
 
 // OKXInstrument OKX instrument info
 type OKXInstrument struct {
-	InstID string  // Instrument ID
-	CtVal  float64 // Contract value
-	CtMult float64 // Contract multiplier
-	LotSz  float64 // Minimum order size
-	MinSz  float64 // Minimum order size
-	TickSz float64 // Minimum price increment
-	CtType string  // Contract type
+	InstID   string  // Instrument ID
+	CtVal    float64 // Contract value
+	CtMult   float64 // Contract multiplier
+	LotSz    float64 // Minimum order size
+	MinSz    float64 // Minimum order size
+	MaxMktSz float64 // Maximum market order size
+	TickSz   float64 // Minimum price increment
+	CtType   string  // Contract type
 }
 
 // OKXResponse OKX API response
@@ -97,23 +105,60 @@ func genOkxClOrdID() string {
 
 // NewOKXTrader creates OKX trader
 func NewOKXTrader(apiKey, secretKey, passphrase string) *OKXTrader {
-	// Use http.DefaultClient to stay consistent with Binance/Bybit SDK
-	// DefaultClient uses DefaultTransport, which reads proxy settings from environment variables
+	// Use default transport which respects system proxy settings
+	// OKX requires proxy in China due to DNS pollution
+	httpClient := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: http.DefaultTransport,
+	}
+
 	trader := &OKXTrader{
 		apiKey:           apiKey,
 		secretKey:        secretKey,
 		passphrase:       passphrase,
-		httpClient:       http.DefaultClient,
+		httpClient:       httpClient,
 		cacheDuration:    15 * time.Second,
 		instrumentsCache: make(map[string]*OKXInstrument),
 	}
 
-	// Set dual position mode
-	if err := trader.setPositionMode(); err != nil {
-		logger.Infof("⚠️ Failed to set OKX position mode: %v (ignore if already in dual mode)", err)
+	// Get current position mode first
+	if err := trader.detectPositionMode(); err != nil {
+		logger.Infof("⚠️ Failed to detect OKX position mode: %v, assuming dual mode", err)
+		trader.positionMode = "long_short_mode"
 	}
 
+	// Try to set dual position mode (only if not already)
+	if trader.positionMode != "long_short_mode" {
+		if err := trader.setPositionMode(); err != nil {
+			logger.Infof("⚠️ Failed to set OKX position mode: %v (current mode: %s)", err, trader.positionMode)
+		}
+	}
+
+	logger.Infof("✓ OKX trader initialized with position mode: %s", trader.positionMode)
 	return trader
+}
+
+// detectPositionMode gets current position mode from account config
+func (t *OKXTrader) detectPositionMode() error {
+	data, err := t.doRequest("GET", okxAccountConfigPath, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get account config: %w", err)
+	}
+
+	var configs []struct {
+		PosMode string `json:"posMode"`
+	}
+
+	if err := json.Unmarshal(data, &configs); err != nil {
+		return fmt.Errorf("failed to parse account config: %w", err)
+	}
+
+	if len(configs) > 0 {
+		t.positionMode = configs[0].PosMode
+		logger.Infof("✓ Detected OKX position mode: %s", t.positionMode)
+	}
+
+	return nil
 }
 
 // setPositionMode sets dual position mode
@@ -312,18 +357,21 @@ func (t *OKXTrader) GetPositions() ([]map[string]interface{}, error) {
 		Lever   string `json:"lever"`
 		LiqPx   string `json:"liqPx"`
 		Margin  string `json:"margin"`
-		CTime   string `json:"cTime"` // Position created time (ms)
-		UTime   string `json:"uTime"` // Position last update time (ms)
+		MgnMode string `json:"mgnMode"` // Margin mode: "cross" or "isolated"
+		CTime   string `json:"cTime"`   // Position created time (ms)
+		UTime   string `json:"uTime"`   // Position last update time (ms)
 	}
 
 	if err := json.Unmarshal(data, &positions); err != nil {
 		return nil, fmt.Errorf("failed to parse position data: %w", err)
 	}
 
+	logger.Infof("🔍 OKX raw positions response: %d positions", len(positions))
 	var result []map[string]interface{}
 	for _, pos := range positions {
-		posAmt, _ := strconv.ParseFloat(pos.Pos, 64)
-		if posAmt == 0 {
+		logger.Infof("🔍 OKX raw position: instId=%s, posSide=%s, pos=%s, mgnMode=%s", pos.InstId, pos.PosSide, pos.Pos, pos.MgnMode)
+		contractCount, _ := strconv.ParseFloat(pos.Pos, 64)
+		if contractCount == 0 {
 			continue
 		}
 
@@ -335,20 +383,36 @@ func (t *OKXTrader) GetPositions() ([]map[string]interface{}, error) {
 
 		// Convert symbol format
 		symbol := t.convertSymbolBack(pos.InstId)
+		logger.Infof("🔍 OKX symbol conversion: %s → %s", pos.InstId, symbol)
 
-		// Determine direction and ensure posAmt is positive
+		// Determine direction and ensure contractCount is positive
 		side := "long"
 		if pos.PosSide == "short" {
 			side = "short"
 		}
 		// OKX short position's pos is negative, need to take absolute value
-		if posAmt < 0 {
-			posAmt = -posAmt
+		if contractCount < 0 {
+			contractCount = -contractCount
+		}
+
+		// Convert contract count to actual position amount (in base asset)
+		// positionAmt = contractCount * ctVal
+		inst, err := t.getInstrument(symbol)
+		posAmt := contractCount
+		if err == nil && inst.CtVal > 0 {
+			posAmt = contractCount * inst.CtVal
+			logger.Debugf("  📊 OKX position %s: contracts=%.4f, ctVal=%.6f, posAmt=%.6f", symbol, contractCount, inst.CtVal, posAmt)
 		}
 
 		// Parse timestamps
 		cTime, _ := strconv.ParseInt(pos.CTime, 10, 64)
 		uTime, _ := strconv.ParseInt(pos.UTime, 10, 64)
+
+		// Default to cross margin mode if not specified
+		mgnMode := pos.MgnMode
+		if mgnMode == "" {
+			mgnMode = "cross"
+		}
 
 		posMap := map[string]interface{}{
 			"symbol":           symbol,
@@ -359,8 +423,9 @@ func (t *OKXTrader) GetPositions() ([]map[string]interface{}, error) {
 			"leverage":         leverage,
 			"liquidationPrice": liqPrice,
 			"side":             side,
-			"createdTime":      cTime, // Position open time (ms)
-			"updatedTime":      uTime, // Position last update time (ms)
+			"mgnMode":          mgnMode, // Margin mode: "cross" or "isolated"
+			"createdTime":      cTime,   // Position open time (ms)
+			"updatedTime":      uTime,   // Position last update time (ms)
 		}
 		result = append(result, posMap)
 	}
@@ -372,6 +437,14 @@ func (t *OKXTrader) GetPositions() ([]map[string]interface{}, error) {
 	t.positionsCacheMutex.Unlock()
 
 	return result, nil
+}
+
+// InvalidatePositionCache clears the position cache to force fresh data on next call
+func (t *OKXTrader) InvalidatePositionCache() {
+	t.positionsCacheMutex.Lock()
+	t.cachedPositions = nil
+	t.positionsCacheTime = time.Time{}
+	t.positionsCacheMutex.Unlock()
 }
 
 // getInstrument gets instrument info
@@ -394,13 +467,14 @@ func (t *OKXTrader) getInstrument(symbol string) (*OKXInstrument, error) {
 	}
 
 	var instruments []struct {
-		InstId string `json:"instId"`
-		CtVal  string `json:"ctVal"`
-		CtMult string `json:"ctMult"`
-		LotSz  string `json:"lotSz"`
-		MinSz  string `json:"minSz"`
-		TickSz string `json:"tickSz"`
-		CtType string `json:"ctType"`
+		InstId   string `json:"instId"`
+		CtVal    string `json:"ctVal"`
+		CtMult   string `json:"ctMult"`
+		LotSz    string `json:"lotSz"`
+		MinSz    string `json:"minSz"`
+		MaxMktSz string `json:"maxMktSz"` // Maximum market order size
+		TickSz   string `json:"tickSz"`
+		CtType   string `json:"ctType"`
 	}
 
 	if err := json.Unmarshal(data, &instruments); err != nil {
@@ -416,16 +490,18 @@ func (t *OKXTrader) getInstrument(symbol string) (*OKXInstrument, error) {
 	ctMult, _ := strconv.ParseFloat(inst.CtMult, 64)
 	lotSz, _ := strconv.ParseFloat(inst.LotSz, 64)
 	minSz, _ := strconv.ParseFloat(inst.MinSz, 64)
+	maxMktSz, _ := strconv.ParseFloat(inst.MaxMktSz, 64)
 	tickSz, _ := strconv.ParseFloat(inst.TickSz, 64)
 
 	instrument := &OKXInstrument{
-		InstID: inst.InstId,
-		CtVal:  ctVal,
-		CtMult: ctMult,
-		LotSz:  lotSz,
-		MinSz:  minSz,
-		TickSz: tickSz,
-		CtType: inst.CtType,
+		InstID:   inst.InstId,
+		CtVal:    ctVal,
+		CtMult:   ctMult,
+		LotSz:    lotSz,
+		MinSz:    minSz,
+		MaxMktSz: maxMktSz,
+		TickSz:   tickSz,
+		CtType:   inst.CtType,
 	}
 
 	// Update cache
@@ -515,15 +591,19 @@ func (t *OKXTrader) OpenLong(symbol string, quantity float64, leverage int) (map
 		return nil, fmt.Errorf("failed to get instrument info: %w", err)
 	}
 
-	// OKX uses contract size, need to convert based on contract value
-	price, err := t.GetMarketPrice(symbol)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get market price: %w", err)
-	}
-
-	// Calculate contract size = quantity * price / contract value
-	sz := quantity * price / inst.CtVal
+	// OKX uses contract count, need to convert quantity (in base asset) to contract count
+	// sz = quantity / ctVal (number of contracts = asset amount / asset per contract)
+	sz := quantity / inst.CtVal
 	szStr := t.formatSize(sz, inst)
+
+	logger.Infof("  📊 OKX OpenLong: quantity=%.6f, ctVal=%.6f, contracts=%.2f", quantity, inst.CtVal, sz)
+
+	// Check max market order size limit
+	if inst.MaxMktSz > 0 && sz > inst.MaxMktSz {
+		logger.Infof("  ⚠️ OKX market order size %.2f exceeds max %.2f, reducing to max", sz, inst.MaxMktSz)
+		sz = inst.MaxMktSz
+		szStr = t.formatSize(sz, inst)
+	}
 
 	body := map[string]interface{}{
 		"instId":  instId,
@@ -588,13 +668,19 @@ func (t *OKXTrader) OpenShort(symbol string, quantity float64, leverage int) (ma
 		return nil, fmt.Errorf("failed to get instrument info: %w", err)
 	}
 
-	price, err := t.GetMarketPrice(symbol)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get market price: %w", err)
-	}
-
-	sz := quantity * price / inst.CtVal
+	// OKX uses contract count, need to convert quantity (in base asset) to contract count
+	// sz = quantity / ctVal (number of contracts = asset amount / asset per contract)
+	sz := quantity / inst.CtVal
 	szStr := t.formatSize(sz, inst)
+
+	logger.Infof("  📊 OKX OpenShort: quantity=%.6f, ctVal=%.6f, contracts=%.2f", quantity, inst.CtVal, sz)
+
+	// Check max market order size limit
+	if inst.MaxMktSz > 0 && sz > inst.MaxMktSz {
+		logger.Infof("  ⚠️ OKX market order size %.2f exceeds max %.2f, reducing to max", sz, inst.MaxMktSz)
+		sz = inst.MaxMktSz
+		szStr = t.formatSize(sz, inst)
+	}
 
 	body := map[string]interface{}{
 		"instId":  instId,
@@ -645,44 +731,76 @@ func (t *OKXTrader) OpenShort(symbol string, quantity float64, leverage int) (ma
 func (t *OKXTrader) CloseLong(symbol string, quantity float64) (map[string]interface{}, error) {
 	instId := t.convertSymbol(symbol)
 
-	// If quantity is 0, get current position (positionAmt is the contract size)
-	if quantity == 0 {
-		positions, err := t.GetPositions()
-		if err != nil {
-			return nil, err
-		}
-		for _, pos := range positions {
-			if pos["symbol"] == symbol && pos["side"] == "long" {
-				quantity = pos["positionAmt"].(float64) // This is already contract size
-				break
-			}
-		}
-		if quantity == 0 {
-			return nil, fmt.Errorf("long position not found for %s", symbol)
-		}
-	}
-
-	// Get instrument info for formatting contract size
+	// Get instrument info for contract conversion
 	inst, err := t.getInstrument(symbol)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get instrument info: %w", err)
 	}
 
-	// quantity is already contract size, format directly
-	szStr := t.formatSize(quantity, inst)
+	// Invalidate position cache and get fresh positions
+	t.InvalidatePositionCache()
+	positions, err := t.GetPositions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions: %w", err)
+	}
 
-	logger.Infof("🔻 OKX close long parameters: symbol=%s, instId=%s, quantity(contracts)=%f, szStr=%s",
-		symbol, instId, quantity, szStr)
+	// Find actual position from exchange
+	var actualQty float64
+	var posFound bool
+	var posMgnMode string = "cross" // Default to cross margin
+	logger.Infof("🔍 OKX CloseLong: searching for symbol=%s in %d positions", symbol, len(positions))
+	for _, pos := range positions {
+		logger.Infof("🔍 OKX position: symbol=%v, side=%v, positionAmt=%v, mgnMode=%v", pos["symbol"], pos["side"], pos["positionAmt"], pos["mgnMode"])
+		if pos["symbol"] == symbol {
+			side := pos["side"].(string)
+			// In net_mode, "long" means positive position
+			// In dual mode, check explicit "long" side
+			if side == "long" || (t.positionMode == "net_mode" && side == "long") {
+				actualQty = pos["positionAmt"].(float64)
+				posFound = true
+				if mgnMode, ok := pos["mgnMode"].(string); ok && mgnMode != "" {
+					posMgnMode = mgnMode
+				}
+				logger.Infof("🔍 OKX CloseLong: found matching position! qty=%.6f, mgnMode=%s", actualQty, posMgnMode)
+				break
+			}
+		}
+	}
+
+	if !posFound || actualQty == 0 {
+		logger.Infof("🔍 OKX CloseLong: NO position found for %s LONG", symbol)
+		return map[string]interface{}{
+			"status":  "NO_POSITION",
+			"message": fmt.Sprintf("No long position found for %s on OKX", symbol),
+		}, nil
+	}
+
+	// Use actual quantity from exchange (more accurate than passed quantity)
+	if quantity == 0 || quantity > actualQty {
+		quantity = actualQty
+	}
+
+	// Convert quantity (base asset) to contract count
+	// contracts = quantity / ctVal
+	contracts := quantity / inst.CtVal
+	szStr := t.formatSize(contracts, inst)
+
+	logger.Infof("🔻 OKX close long: symbol=%s, instId=%s, quantity=%.6f, ctVal=%.6f, contracts=%.2f, szStr=%s, posMode=%s, mgnMode=%s",
+		symbol, instId, quantity, inst.CtVal, contracts, szStr, t.positionMode, posMgnMode)
 
 	body := map[string]interface{}{
 		"instId":  instId,
-		"tdMode":  "cross",
+		"tdMode":  posMgnMode, // Use position's actual margin mode (cross or isolated)
 		"side":    "sell",
-		"posSide": "long",
 		"ordType": "market",
 		"sz":      szStr,
 		"clOrdId": genOkxClOrdID(),
 		"tag":     okxTag,
+	}
+
+	// Only add posSide in dual mode (long_short_mode)
+	if t.positionMode == "long_short_mode" {
+		body["posSide"] = "long"
 	}
 
 	data, err := t.doRequest("POST", okxOrderPath, body)
@@ -724,25 +842,48 @@ func (t *OKXTrader) CloseLong(symbol string, quantity float64) (map[string]inter
 func (t *OKXTrader) CloseShort(symbol string, quantity float64) (map[string]interface{}, error) {
 	instId := t.convertSymbol(symbol)
 
-	// If quantity is 0, get current position (positionAmt is the contract size)
-	if quantity == 0 {
-		positions, err := t.GetPositions()
-		if err != nil {
-			return nil, err
-		}
-		logger.Infof("🔍 OKX CloseShort searching positions: symbol=%s, current position count=%d", symbol, len(positions))
-		for _, pos := range positions {
-			logger.Infof("🔍 OKX position: symbol=%v, side=%v, positionAmt=%v",
-				pos["symbol"], pos["side"], pos["positionAmt"])
-			if pos["symbol"] == symbol && pos["side"] == "short" {
-				quantity = pos["positionAmt"].(float64)
-				logger.Infof("🔍 OKX found short position: quantity=%f", quantity)
-				break
+	// Get instrument info for contract conversion
+	inst, err := t.getInstrument(symbol)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instrument info: %w", err)
+	}
+
+	// Invalidate position cache and get fresh positions
+	t.InvalidatePositionCache()
+	positions, err := t.GetPositions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions: %w", err)
+	}
+
+	// Find actual position from exchange
+	var actualQty float64
+	var posFound bool
+	var posMgnMode string = "cross" // Default to cross margin
+	logger.Infof("🔍 OKX CloseShort searching positions: symbol=%s, current position count=%d", symbol, len(positions))
+	for _, pos := range positions {
+		logger.Infof("🔍 OKX position: symbol=%v, side=%v, positionAmt=%v, mgnMode=%v",
+			pos["symbol"], pos["side"], pos["positionAmt"], pos["mgnMode"])
+		if pos["symbol"] == symbol && pos["side"] == "short" {
+			actualQty = pos["positionAmt"].(float64)
+			posFound = true
+			if mgnMode, ok := pos["mgnMode"].(string); ok && mgnMode != "" {
+				posMgnMode = mgnMode
 			}
+			logger.Infof("🔍 OKX found short position: quantity=%f (base asset), mgnMode=%s", actualQty, posMgnMode)
+			break
 		}
-		if quantity == 0 {
-			return nil, fmt.Errorf("short position not found for %s", symbol)
-		}
+	}
+
+	if !posFound || actualQty == 0 {
+		return map[string]interface{}{
+			"status":  "NO_POSITION",
+			"message": fmt.Sprintf("No short position found for %s on OKX", symbol),
+		}, nil
+	}
+
+	// Use actual quantity from exchange (more accurate than passed quantity)
+	if quantity == 0 || quantity > actualQty {
+		quantity = actualQty
 	}
 
 	// Ensure quantity is positive (OKX sz parameter must be positive)
@@ -750,30 +891,27 @@ func (t *OKXTrader) CloseShort(symbol string, quantity float64) (map[string]inte
 		quantity = -quantity
 	}
 
-	// Get instrument info for formatting contract size
-	inst, err := t.getInstrument(symbol)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get instrument info: %w", err)
-	}
+	// Convert quantity (base asset) to contract count
+	// contracts = quantity / ctVal
+	contracts := quantity / inst.CtVal
+	szStr := t.formatSize(contracts, inst)
 
-	logger.Infof("🔍 OKX instrument info: instId=%s, lotSz=%f, minSz=%f, ctVal=%f",
-		inst.InstID, inst.LotSz, inst.MinSz, inst.CtVal)
-
-	// quantity is already contract size, format directly
-	szStr := t.formatSize(quantity, inst)
-
-	logger.Infof("🔻 OKX close short parameters: symbol=%s, instId=%s, quantity(contracts)=%f, szStr=%s",
-		symbol, instId, quantity, szStr)
+	logger.Infof("🔻 OKX close short: symbol=%s, quantity=%.6f, ctVal=%.6f, contracts=%.2f, szStr=%s, posMode=%s, mgnMode=%s",
+		symbol, quantity, inst.CtVal, contracts, szStr, t.positionMode, posMgnMode)
 
 	body := map[string]interface{}{
 		"instId":  instId,
-		"tdMode":  "cross",
+		"tdMode":  posMgnMode, // Use position's actual margin mode (cross or isolated)
 		"side":    "buy",
-		"posSide": "short",
 		"ordType": "market",
 		"sz":      szStr,
 		"clOrdId": genOkxClOrdID(),
 		"tag":     okxTag,
+	}
+
+	// Only add posSide in dual mode (long_short_mode)
+	if t.positionMode == "long_short_mode" {
+		body["posSide"] = "short"
 	}
 
 	logger.Infof("🔻 OKX close short request body: %+v", body)
@@ -854,9 +992,8 @@ func (t *OKXTrader) SetStopLoss(symbol string, positionSide string, quantity, st
 		return fmt.Errorf("failed to get instrument info: %w", err)
 	}
 
-	// Calculate contract size
-	price, _ := t.GetMarketPrice(symbol)
-	sz := quantity * price / inst.CtVal
+	// Calculate contract size: quantity (in base asset) / ctVal (asset per contract)
+	sz := quantity / inst.CtVal
 	szStr := t.formatSize(sz, inst)
 
 	// Determine direction
@@ -898,9 +1035,8 @@ func (t *OKXTrader) SetTakeProfit(symbol string, positionSide string, quantity, 
 		return fmt.Errorf("failed to get instrument info: %w", err)
 	}
 
-	// Calculate contract size
-	price, _ := t.GetMarketPrice(symbol)
-	sz := quantity * price / inst.CtVal
+	// Calculate contract size: quantity (in base asset) / ctVal (asset per contract)
+	sz := quantity / inst.CtVal
 	szStr := t.formatSize(sz, inst)
 
 	// Determine direction
@@ -1030,20 +1166,15 @@ func (t *OKXTrader) CancelStopOrders(symbol string) error {
 	return t.cancelAlgoOrders(symbol, "")
 }
 
-// FormatQuantity formats quantity
+// FormatQuantity formats quantity (converts base asset quantity to contract count)
 func (t *OKXTrader) FormatQuantity(symbol string, quantity float64) (string, error) {
 	inst, err := t.getInstrument(symbol)
 	if err != nil {
 		return fmt.Sprintf("%.3f", quantity), nil
 	}
 
-	// OKX uses contract size
-	price, _ := t.GetMarketPrice(symbol)
-	if price == 0 {
-		return fmt.Sprintf("%.0f", quantity), nil
-	}
-
-	sz := quantity * price / inst.CtVal
+	// OKX uses contract count: quantity (in base asset) / ctVal (asset per contract)
+	sz := quantity / inst.CtVal
 	return t.formatSize(sz, inst), nil
 }
 
@@ -1101,10 +1232,19 @@ func (t *OKXTrader) GetOrderStatus(symbol string, orderID string) (map[string]in
 
 	order := orders[0]
 	avgPrice, _ := strconv.ParseFloat(order.AvgPx, 64)
-	fillSz, _ := strconv.ParseFloat(order.AccFillSz, 64)
+	fillSz, _ := strconv.ParseFloat(order.AccFillSz, 64) // This is in contracts
 	fee, _ := strconv.ParseFloat(order.Fee, 64)
 	cTime, _ := strconv.ParseInt(order.CTime, 10, 64)
 	uTime, _ := strconv.ParseInt(order.UTime, 10, 64)
+
+	// Convert contract count to base asset quantity
+	// executedQty = contracts * ctVal
+	executedQty := fillSz
+	inst, err := t.getInstrument(symbol)
+	if err == nil && inst.CtVal > 0 {
+		executedQty = fillSz * inst.CtVal
+		logger.Debugf("  📊 OKX order %s: fillSz(contracts)=%.4f, ctVal=%.6f, executedQty=%.6f", orderID, fillSz, inst.CtVal, executedQty)
+	}
 
 	// Status mapping
 	statusMap := map[string]string{
@@ -1124,7 +1264,7 @@ func (t *OKXTrader) GetOrderStatus(symbol string, orderID string) (map[string]in
 		"symbol":      symbol,
 		"status":      status,
 		"avgPrice":    avgPrice,
-		"executedQty": fillSz,
+		"executedQty": executedQty,
 		"side":        order.Side,
 		"type":        order.OrdType,
 		"time":        cTime,
@@ -1138,3 +1278,112 @@ var okxTag = func() string {
 	b, _ := base64.StdEncoding.DecodeString("NGMzNjNjODFlZGM1QkNERQ==")
 	return string(b)
 }()
+
+// GetClosedPnL retrieves closed position PnL records from OKX
+// OKX API: /api/v5/account/positions-history
+func (t *OKXTrader) GetClosedPnL(startTime time.Time, limit int) ([]ClosedPnLRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Build query path with parameters
+	path := fmt.Sprintf("/api/v5/account/positions-history?instType=SWAP&limit=%d", limit)
+	if !startTime.IsZero() {
+		path += fmt.Sprintf("&after=%d", startTime.UnixMilli())
+	}
+
+	data, err := t.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions history: %w", err)
+	}
+
+	var resp struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			InstID      string `json:"instId"`      // Instrument ID (e.g., "BTC-USDT-SWAP")
+			Direction   string `json:"direction"`   // Position direction: "long" or "short"
+			OpenAvgPx   string `json:"openAvgPx"`   // Average open price
+			CloseAvgPx  string `json:"closeAvgPx"`  // Average close price
+			CloseTotalPos string `json:"closeTotalPos"` // Closed position quantity
+			RealizedPnl string `json:"realizedPnl"` // Realized PnL
+			Fee         string `json:"fee"`         // Total fee
+			FundingFee  string `json:"fundingFee"`  // Funding fee
+			Lever       string `json:"lever"`       // Leverage
+			CTime       string `json:"cTime"`       // Position open time
+			UTime       string `json:"uTime"`       // Position close time
+			Type        string `json:"type"`        // Close type: 1=close position, 2=partial close, 3=liquidation, 4=partial liquidation
+			PosId       string `json:"posId"`       // Position ID
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if resp.Code != "0" {
+		return nil, fmt.Errorf("OKX API error: %s - %s", resp.Code, resp.Msg)
+	}
+
+	records := make([]ClosedPnLRecord, 0, len(resp.Data))
+
+	for _, pos := range resp.Data {
+		record := ClosedPnLRecord{}
+
+		// Convert instrument ID to standard format (BTC-USDT-SWAP -> BTCUSDT)
+		parts := strings.Split(pos.InstID, "-")
+		if len(parts) >= 2 {
+			record.Symbol = parts[0] + parts[1]
+		} else {
+			record.Symbol = pos.InstID
+		}
+
+		// Side
+		record.Side = pos.Direction // OKX already returns "long" or "short"
+
+		// Prices
+		record.EntryPrice, _ = strconv.ParseFloat(pos.OpenAvgPx, 64)
+		record.ExitPrice, _ = strconv.ParseFloat(pos.CloseAvgPx, 64)
+
+		// Quantity
+		record.Quantity, _ = strconv.ParseFloat(pos.CloseTotalPos, 64)
+
+		// PnL
+		record.RealizedPnL, _ = strconv.ParseFloat(pos.RealizedPnl, 64)
+
+		// Fee
+		fee, _ := strconv.ParseFloat(pos.Fee, 64)
+		fundingFee, _ := strconv.ParseFloat(pos.FundingFee, 64)
+		record.Fee = -fee + fundingFee // Fee is negative in OKX
+
+		// Leverage
+		lev, _ := strconv.ParseFloat(pos.Lever, 64)
+		record.Leverage = int(lev)
+
+		// Times
+		cTime, _ := strconv.ParseInt(pos.CTime, 10, 64)
+		uTime, _ := strconv.ParseInt(pos.UTime, 10, 64)
+		record.EntryTime = time.UnixMilli(cTime)
+		record.ExitTime = time.UnixMilli(uTime)
+
+		// Close type
+		switch pos.Type {
+		case "1", "2":
+			record.CloseType = "unknown" // Could be manual or AI, need to cross-reference
+		case "3", "4":
+			record.CloseType = "liquidation"
+		default:
+			record.CloseType = "unknown"
+		}
+
+		// Exchange ID
+		record.ExchangeID = pos.PosId
+
+		records = append(records, record)
+	}
+
+	return records, nil
+}

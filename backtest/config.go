@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"nofx/market"
+	"nofx/store"
 )
 
 // AIConfig defines the AI client configuration used in backtesting.
@@ -28,6 +29,7 @@ type BacktestConfig struct {
 	RunID                string   `json:"run_id"`
 	UserID               string   `json:"user_id,omitempty"`
 	AIModelID            string   `json:"ai_model_id,omitempty"`
+	StrategyID           string   `json:"strategy_id,omitempty"` // Optional: use saved strategy from Strategy Studio
 	Symbols              []string `json:"symbols"`
 	Timeframes           []string `json:"timeframes"`
 	DecisionTimeframe    string   `json:"decision_timeframe"`
@@ -52,6 +54,9 @@ type BacktestConfig struct {
 	CheckpointIntervalBars    int    `json:"checkpoint_interval_bars,omitempty"`
 	CheckpointIntervalSeconds int    `json:"checkpoint_interval_seconds,omitempty"`
 	ReplayDecisionDir         string `json:"replay_decision_dir,omitempty"`
+
+	// Internal: loaded strategy config (set by Manager when StrategyID is provided)
+	loadedStrategy *store.StrategyConfig `json:"-"`
 }
 
 // Validate performs validity checks on the configuration and fills in default values.
@@ -174,5 +179,107 @@ func validateFillPolicy(policy string) error {
 		return nil
 	default:
 		return fmt.Errorf("unsupported fill_policy '%s'", policy)
+	}
+}
+
+// SetLoadedStrategy sets the loaded strategy config from database.
+func (cfg *BacktestConfig) SetLoadedStrategy(strategy *store.StrategyConfig) {
+	cfg.loadedStrategy = strategy
+}
+
+// ToStrategyConfig converts BacktestConfig to StrategyConfig for unified prompt generation.
+// This ensures backtest uses the same StrategyEngine logic as live trading.
+// If a strategy was loaded from database (via StrategyID), it will be used with overrides.
+func (cfg *BacktestConfig) ToStrategyConfig() *store.StrategyConfig {
+	// If a strategy was loaded from database, use it with some overrides
+	if cfg.loadedStrategy != nil {
+		result := *cfg.loadedStrategy // Make a copy
+
+		// Override coin source with backtest symbols (回测指定的币对优先)
+		if len(cfg.Symbols) > 0 {
+			result.CoinSource.SourceType = "static"
+			result.CoinSource.StaticCoins = cfg.Symbols
+			result.CoinSource.UseCoinPool = false
+			result.CoinSource.UseOITop = false
+		}
+
+		// Override timeframes with backtest config
+		if len(cfg.Timeframes) > 0 {
+			result.Indicators.Klines.SelectedTimeframes = cfg.Timeframes
+			result.Indicators.Klines.PrimaryTimeframe = cfg.Timeframes[0]
+			if len(cfg.Timeframes) > 1 {
+				result.Indicators.Klines.LongerTimeframe = cfg.Timeframes[len(cfg.Timeframes)-1]
+			}
+			result.Indicators.Klines.EnableMultiTimeframe = len(cfg.Timeframes) > 1
+		}
+
+		// Override leverage with backtest config
+		if cfg.Leverage.BTCETHLeverage > 0 {
+			result.RiskControl.BTCETHMaxLeverage = cfg.Leverage.BTCETHLeverage
+		}
+		if cfg.Leverage.AltcoinLeverage > 0 {
+			result.RiskControl.AltcoinMaxLeverage = cfg.Leverage.AltcoinLeverage
+		}
+
+		// Override custom prompt if provided in backtest config
+		if cfg.CustomPrompt != "" {
+			result.CustomPrompt = cfg.CustomPrompt
+		}
+
+		return &result
+	}
+
+	// Fallback: build strategy config from backtest config (original logic)
+	primaryTF := "5m"
+	longerTF := "4h"
+	if len(cfg.Timeframes) > 0 {
+		primaryTF = cfg.Timeframes[0]
+	}
+	if len(cfg.Timeframes) > 1 {
+		longerTF = cfg.Timeframes[len(cfg.Timeframes)-1]
+	}
+
+	return &store.StrategyConfig{
+		CoinSource: store.CoinSourceConfig{
+			SourceType:    "static",
+			StaticCoins:   cfg.Symbols,
+			UseCoinPool:   false,
+			CoinPoolLimit: len(cfg.Symbols),
+			UseOITop:      false,
+			OITopLimit:    0,
+		},
+		Indicators: store.IndicatorConfig{
+			Klines: store.KlineConfig{
+				PrimaryTimeframe:     primaryTF,
+				PrimaryCount:         30,
+				LongerTimeframe:      longerTF,
+				LongerCount:          10,
+				EnableMultiTimeframe: len(cfg.Timeframes) > 1,
+				SelectedTimeframes:   cfg.Timeframes,
+			},
+			EnableRawKlines:   true,
+			EnableEMA:         true,
+			EnableMACD:        true,
+			EnableRSI:         true,
+			EnableATR:         true,
+			EnableVolume:      true,
+			EnableOI:          true,
+			EnableFundingRate: true,
+			EMAPeriods:        []int{20, 50},
+			RSIPeriods:        []int{7, 14},
+			ATRPeriods:        []int{14},
+		},
+		CustomPrompt: cfg.CustomPrompt,
+		RiskControl: store.RiskControlConfig{
+			MaxPositions:                 3,
+			BTCETHMaxLeverage:            cfg.Leverage.BTCETHLeverage,
+			AltcoinMaxLeverage:           cfg.Leverage.AltcoinLeverage,
+			BTCETHMaxPositionValueRatio:  5.0,
+			AltcoinMaxPositionValueRatio: 1.0,
+			MaxMarginUsage:               0.9,
+			MinPositionSize:              12,
+			MinRiskRewardRatio:           3.0,
+			MinConfidence:                75,
+		},
 	}
 }

@@ -31,9 +31,10 @@ const (
 
 // Runner encapsulates the lifecycle of a single backtest run.
 type Runner struct {
-	cfg     BacktestConfig
-	feed    *DataFeed
-	account *BacktestAccount
+	cfg            BacktestConfig
+	feed           *DataFeed
+	account        *BacktestAccount
+	strategyEngine *decision.StrategyEngine
 
 	decisionLogDir string
 	mcpClient      mcp.AIClient
@@ -115,10 +116,15 @@ func NewRunner(cfg BacktestConfig, mcpClient mcp.AIClient) (*Runner, error) {
 		aiCache = cache
 	}
 
+	// Create strategy engine from backtest config for unified prompt generation
+	strategyConfig := cfg.ToStrategyConfig()
+	strategyEngine := decision.NewStrategyEngine(strategyConfig)
+
 	r := &Runner{
 		cfg:            cfg,
 		feed:           feed,
 		account:        account,
+		strategyEngine: strategyEngine,
 		decisionLogDir: dLogDir,
 		mcpClient:      client,
 		status:         RunStateCreated,
@@ -485,14 +491,19 @@ func (r *Runner) buildDecisionContext(ts int64, marketData map[string]*market.Da
 
 	positions := r.convertPositions(priceMap)
 
-	candidateCoins := make([]decision.CandidateCoin, 0, len(r.cfg.Symbols))
-	for _, sym := range r.cfg.Symbols {
-		candidateCoins = append(candidateCoins, decision.CandidateCoin{Symbol: sym})
+	// Get candidate coins from strategy engine (includes source info)
+	candidateCoins, err := r.strategyEngine.GetCandidateCoins()
+	if err != nil {
+		// Fallback to simple list if strategy engine fails
+		candidateCoins = make([]decision.CandidateCoin, 0, len(r.cfg.Symbols))
+		for _, sym := range r.cfg.Symbols {
+			candidateCoins = append(candidateCoins, decision.CandidateCoin{Symbol: sym, Sources: []string{"backtest"}})
+		}
 	}
 
 	runtime := int((ts - int64(r.cfg.StartTS*1000)) / 60000)
 	ctx := &decision.Context{
-		CurrentTime:     time.UnixMilli(ts).UTC().Format(time.RFC3339),
+		CurrentTime:     time.UnixMilli(ts).UTC().Format("2006-01-02 15:04:05 UTC"),
 		RuntimeMinutes:  runtime,
 		CallCount:       callCount,
 		Account:         accountInfo,
@@ -503,6 +514,37 @@ func (r *Runner) buildDecisionContext(ts int64, marketData map[string]*market.Da
 		MultiTFMarket:   multiTF,
 		BTCETHLeverage:  r.cfg.Leverage.BTCETHLeverage,
 		AltcoinLeverage: r.cfg.Leverage.AltcoinLeverage,
+		Timeframes:      r.cfg.Timeframes,
+	}
+
+	// Fetch quantitative data if enabled in strategy (uses current data as approximation)
+	strategyConfig := r.strategyEngine.GetConfig()
+	if strategyConfig.Indicators.EnableQuantData && strategyConfig.Indicators.QuantDataAPIURL != "" {
+		// Collect symbols to query (candidate coins + position coins)
+		symbolSet := make(map[string]bool)
+		for _, sym := range r.cfg.Symbols {
+			symbolSet[sym] = true
+		}
+		for _, pos := range positions {
+			symbolSet[pos.Symbol] = true
+		}
+		symbols := make([]string, 0, len(symbolSet))
+		for sym := range symbolSet {
+			symbols = append(symbols, sym)
+		}
+		ctx.QuantDataMap = r.strategyEngine.FetchQuantDataBatch(symbols)
+		if len(ctx.QuantDataMap) > 0 {
+			logger.Infof("📊 Backtest: fetched quant data for %d symbols", len(ctx.QuantDataMap))
+		}
+	}
+
+	// Fetch OI ranking data if enabled in strategy (uses current data as approximation)
+	if strategyConfig.Indicators.EnableOIRanking {
+		ctx.OIRankingData = r.strategyEngine.FetchOIRankingData()
+		if ctx.OIRankingData != nil {
+			logger.Infof("📊 Backtest: OI ranking data ready: %d top, %d low positions",
+				len(ctx.OIRankingData.TopPositions), len(ctx.OIRankingData.LowPositions))
+		}
 	}
 
 	record := &store.DecisionRecord{
@@ -537,12 +579,13 @@ func (r *Runner) fillDecisionRecord(record *store.DecisionRecord, full *decision
 func (r *Runner) invokeAIWithRetry(ctx *decision.Context) (*decision.FullDecision, error) {
 	var lastErr error
 	for attempt := 0; attempt < aiDecisionMaxRetries; attempt++ {
-		fd, err := decision.GetFullDecisionWithCustomPrompt(
+		// Use GetFullDecisionWithStrategy with the pre-configured strategy engine
+		// This ensures backtest uses the same unified prompt generation as live trading
+		fd, err := decision.GetFullDecisionWithStrategy(
 			ctx,
 			r.mcpClient,
-			r.cfg.CustomPrompt,
-			r.cfg.OverrideBasePrompt,
-			r.cfg.PromptTemplate,
+			r.strategyEngine,
+			r.cfg.PromptVariant,
 		)
 		if err == nil {
 			return fd, nil
@@ -702,10 +745,31 @@ func (r *Runner) determineQuantity(dec decision.Decision, price float64) float64
 	if equity <= 0 {
 		equity = r.account.InitialBalance()
 	}
+
+	// Get leverage for this symbol
+	leverage := r.resolveLeverage(dec.Leverage, dec.Symbol)
+	if leverage <= 0 {
+		leverage = 5
+	}
+
+	// Calculate available margin (leave some buffer for fees)
+	availableCash := r.account.Cash()
+	maxMarginToUse := availableCash * 0.9 // Use max 90% of available cash
+	maxPositionValue := maxMarginToUse * float64(leverage)
+
 	sizeUSD := dec.PositionSizeUSD
 	if sizeUSD <= 0 {
+		// Default to 5% of equity, but cap to available margin
 		sizeUSD = 0.05 * equity
 	}
+
+	// Cap position size to what we can actually afford
+	if sizeUSD > maxPositionValue {
+		logger.Infof("📊 Backtest: capping position from %.2f to %.2f (available margin: %.2f, leverage: %dx)",
+			sizeUSD, maxPositionValue, maxMarginToUse, leverage)
+		sizeUSD = maxPositionValue
+	}
+
 	qty := sizeUSD / price
 	if qty < 0 {
 		qty = 0
@@ -847,6 +911,7 @@ func (r *Runner) updateState(ts int64, equity, unrealized, marginUsed float64, p
 			LiquidationPrice: pos.LiquidationPrice,
 			MarginUsed:       pos.Margin,
 			OpenTime:         pos.OpenTime,
+			AccumulatedFee:   pos.AccumulatedFee,
 		}
 	}
 
@@ -1090,6 +1155,49 @@ func (r *Runner) StatusPayload() StatusPayload {
 	snapshot := r.snapshotState()
 	progress := progressPercent(snapshot, r.cfg)
 
+	// Build position statuses with unrealized P&L
+	positions := make([]PositionStatus, 0, len(snapshot.Positions))
+	for _, pos := range snapshot.Positions {
+		if pos.Quantity <= 0 {
+			continue
+		}
+		// Get mark price from feed if available
+		markPrice := pos.AvgPrice // fallback to entry price
+		if r.feed != nil && snapshot.BarTimestamp > 0 {
+			if md, _, err := r.feed.BuildMarketData(snapshot.BarTimestamp); err == nil {
+				if data, ok := md[pos.Symbol]; ok {
+					markPrice = data.CurrentPrice
+				}
+			}
+		}
+
+		// Calculate unrealized P&L
+		var unrealizedPnL float64
+		if pos.Side == "long" {
+			unrealizedPnL = (markPrice - pos.AvgPrice) * pos.Quantity
+		} else {
+			unrealizedPnL = (pos.AvgPrice - markPrice) * pos.Quantity
+		}
+
+		// Calculate P&L percentage based on margin
+		pnlPct := 0.0
+		if pos.MarginUsed > 0 {
+			pnlPct = (unrealizedPnL / pos.MarginUsed) * 100
+		}
+
+		positions = append(positions, PositionStatus{
+			Symbol:           pos.Symbol,
+			Side:             pos.Side,
+			Quantity:         pos.Quantity,
+			EntryPrice:       pos.AvgPrice,
+			MarkPrice:        markPrice,
+			Leverage:         pos.Leverage,
+			UnrealizedPnL:    unrealizedPnL,
+			UnrealizedPnLPct: pnlPct,
+			MarginUsed:       pos.MarginUsed,
+		})
+	}
+
 	payload := StatusPayload{
 		RunID:          r.cfg.RunID,
 		State:          r.Status(),
@@ -1100,6 +1208,7 @@ func (r *Runner) StatusPayload() StatusPayload {
 		Equity:         snapshot.Equity,
 		UnrealizedPnL:  snapshot.UnrealizedPnL,
 		RealizedPnL:    snapshot.RealizedPnL,
+		Positions:      positions,
 		Note:           snapshot.LiquidationNote,
 		LastError:      r.lastErrorString(),
 		LastUpdatedIso: snapshot.LastUpdate.UTC().Format(time.RFC3339),

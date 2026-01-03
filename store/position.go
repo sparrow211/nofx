@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -24,25 +25,29 @@ type TraderStats struct {
 
 // TraderPosition position record (complete open/close position tracking)
 type TraderPosition struct {
-	ID           int64      `json:"id"`
-	TraderID     string     `json:"trader_id"`
-	ExchangeID   string     `json:"exchange_id"`    // Exchange ID: binance/bybit/hyperliquid/aster/lighter
-	Symbol       string     `json:"symbol"`
-	Side         string     `json:"side"`           // LONG/SHORT
-	Quantity     float64    `json:"quantity"`       // Opening quantity
-	EntryPrice   float64    `json:"entry_price"`    // Entry price
-	EntryOrderID string     `json:"entry_order_id"` // Entry order ID
-	EntryTime    time.Time  `json:"entry_time"`     // Entry time
-	ExitPrice    float64    `json:"exit_price"`     // Exit price
-	ExitOrderID  string     `json:"exit_order_id"`  // Exit order ID
-	ExitTime     *time.Time `json:"exit_time"`      // Exit time
-	RealizedPnL  float64    `json:"realized_pnl"`   // Realized profit and loss
-	Fee          float64    `json:"fee"`            // Fee
-	Leverage     int        `json:"leverage"`       // Leverage multiplier
-	Status       string     `json:"status"`         // OPEN/CLOSED
-	CloseReason  string     `json:"close_reason"`   // Close reason: ai_decision/manual/stop_loss/take_profit
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID                 int64      `json:"id"`
+	TraderID           string     `json:"trader_id"`
+	ExchangeID         string     `json:"exchange_id"`          // Exchange account UUID (for multi-account support)
+	ExchangeType       string     `json:"exchange_type"`        // Exchange type: binance/bybit/okx/hyperliquid/aster/lighter
+	ExchangePositionID string     `json:"exchange_position_id"` // Exchange-specific unique position ID for deduplication
+	Symbol             string     `json:"symbol"`
+	Side               string     `json:"side"`            // LONG/SHORT
+	EntryQuantity      float64    `json:"entry_quantity"`  // Original entry quantity (never modified)
+	Quantity           float64    `json:"quantity"`        // Remaining quantity (reduced on partial close)
+	EntryPrice         float64    `json:"entry_price"`     // Entry price
+	EntryOrderID       string     `json:"entry_order_id"`  // Entry order ID
+	EntryTime          time.Time  `json:"entry_time"`      // Entry time
+	ExitPrice          float64    `json:"exit_price"`      // Exit price
+	ExitOrderID        string     `json:"exit_order_id"`   // Exit order ID
+	ExitTime           *time.Time `json:"exit_time"`       // Exit time
+	RealizedPnL        float64    `json:"realized_pnl"`    // Realized profit and loss
+	Fee                float64    `json:"fee"`             // Fee
+	Leverage           int        `json:"leverage"`        // Leverage multiplier
+	Status             string     `json:"status"`          // OPEN/CLOSED
+	CloseReason        string     `json:"close_reason"`    // Close reason: ai_decision/manual/stop_loss/take_profit
+	Source             string     `json:"source"`          // Source: system/manual/sync
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // PositionStore position storage
@@ -62,6 +67,8 @@ func (s *PositionStore) InitTables() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			trader_id TEXT NOT NULL,
 			exchange_id TEXT NOT NULL DEFAULT '',
+			exchange_type TEXT NOT NULL DEFAULT '',
+			exchange_position_id TEXT NOT NULL DEFAULT '',
 			symbol TEXT NOT NULL,
 			side TEXT NOT NULL,
 			quantity REAL NOT NULL,
@@ -76,6 +83,7 @@ func (s *PositionStore) InitTables() error {
 			leverage INTEGER DEFAULT 1,
 			status TEXT DEFAULT 'OPEN',
 			close_reason TEXT DEFAULT '',
+			source TEXT DEFAULT 'system',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
@@ -87,6 +95,16 @@ func (s *PositionStore) InitTables() error {
 	// Migration: add exchange_id column to existing table (if not exists)
 	// Must be executed before creating indexes!
 	s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN exchange_id TEXT NOT NULL DEFAULT ''`)
+	// Migration: add exchange_type column (binance/bybit/okx/etc)
+	s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN exchange_type TEXT NOT NULL DEFAULT ''`)
+	// Migration: add exchange_position_id for deduplication
+	s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN exchange_position_id TEXT NOT NULL DEFAULT ''`)
+	// Migration: add source field (system/manual/sync)
+	s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN source TEXT DEFAULT 'system'`)
+	// Migration: add entry_quantity field (original quantity, never modified on partial close)
+	s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN entry_quantity REAL DEFAULT 0`)
+	// Backfill: set entry_quantity = quantity for existing records where entry_quantity is 0
+	s.db.Exec(`UPDATE trader_positions SET entry_quantity = quantity WHERE entry_quantity = 0 OR entry_quantity IS NULL`)
 
 	// Create indexes (after migration)
 	indices := []string{
@@ -96,10 +114,16 @@ func (s *PositionStore) InitTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_positions_symbol ON trader_positions(trader_id, symbol, side, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_positions_entry ON trader_positions(trader_id, entry_time DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_positions_exit ON trader_positions(trader_id, exit_time DESC)`,
+		// Unique index based on exchange_id (account UUID), not trader_id
+		// This ensures the same position from an exchange account is not duplicated across different traders
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_exchange_pos_unique ON trader_positions(exchange_id, exchange_position_id) WHERE exchange_position_id != ''`,
 	}
 	for _, idx := range indices {
 		if _, err := s.db.Exec(idx); err != nil {
-			return fmt.Errorf("failed to create index: %w", err)
+			// Ignore unique index creation errors for existing data
+			if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
+				return fmt.Errorf("failed to create index: %w", err)
+			}
 		}
 	}
 
@@ -112,14 +136,18 @@ func (s *PositionStore) Create(pos *TraderPosition) error {
 	pos.CreatedAt = now
 	pos.UpdatedAt = now
 	pos.Status = "OPEN"
+	// Set EntryQuantity to same as Quantity if not already set
+	if pos.EntryQuantity == 0 {
+		pos.EntryQuantity = pos.Quantity
+	}
 
 	result, err := s.db.Exec(`
 		INSERT INTO trader_positions (
-			trader_id, exchange_id, symbol, side, quantity, entry_price, entry_order_id,
+			trader_id, exchange_id, exchange_type, symbol, side, quantity, entry_quantity, entry_price, entry_order_id,
 			entry_time, leverage, status, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		pos.TraderID, pos.ExchangeID, pos.Symbol, pos.Side, pos.Quantity, pos.EntryPrice,
+		pos.TraderID, pos.ExchangeID, pos.ExchangeType, pos.Symbol, pos.Side, pos.Quantity, pos.EntryQuantity, pos.EntryPrice,
 		pos.EntryOrderID, pos.EntryTime.Format(time.RFC3339), pos.Leverage,
 		pos.Status, now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
@@ -151,10 +179,154 @@ func (s *PositionStore) ClosePosition(id int64, exitPrice float64, exitOrderID s
 	return nil
 }
 
+// UpdatePositionQuantityAndPrice updates position quantity and recalculates entry price (weighted average) when adding to position
+// Both quantity and entry_quantity are updated to reflect the new total position size
+func (s *PositionStore) UpdatePositionQuantityAndPrice(id int64, addQty float64, addPrice float64, addFee float64) error {
+	// First, get current position data
+	var currentQty, currentEntryQty, currentEntryPrice, currentFee float64
+	err := s.db.QueryRow(`
+		SELECT quantity, COALESCE(entry_quantity, quantity), entry_price, fee FROM trader_positions WHERE id = ?
+	`, id).Scan(&currentQty, &currentEntryQty, &currentEntryPrice, &currentFee)
+	if err != nil {
+		return fmt.Errorf("failed to get current position: %w", err)
+	}
+
+	// Calculate weighted average entry price
+	newQty := currentQty + addQty
+	newEntryQty := currentEntryQty + addQty
+	// Round quantity to 4 decimal places to avoid floating point precision issues
+	newQty = math.Round(newQty*10000) / 10000
+	newEntryQty = math.Round(newEntryQty*10000) / 10000
+
+	newEntryPrice := (currentEntryPrice*currentQty + addPrice*addQty) / newQty
+	// Round to 2 decimal places to avoid floating point precision issues
+	newEntryPrice = math.Round(newEntryPrice*100) / 100
+
+	// Accumulate fees
+	newFee := currentFee + addFee
+
+	// Update position (both quantity and entry_quantity)
+	now := time.Now()
+	_, err = s.db.Exec(`
+		UPDATE trader_positions SET
+			quantity = ?, entry_quantity = ?, entry_price = ?, fee = ?, updated_at = ?
+		WHERE id = ?
+	`, newQty, newEntryQty, newEntryPrice, newFee, now.Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("failed to update position quantity and price: %w", err)
+	}
+	return nil
+}
+
+// ReducePositionQuantity reduces position quantity for partial close (keeps status as OPEN)
+// Also updates exit_price with weighted average of all partial closes
+func (s *PositionStore) ReducePositionQuantity(id int64, reduceQty float64, exitPrice float64, addFee float64, addPnL float64) error {
+	// First get current position data
+	var currentQty, currentFee, currentExitPrice, entryQty, currentPnL float64
+	err := s.db.QueryRow(`SELECT quantity, fee, exit_price, entry_quantity, realized_pnl FROM trader_positions WHERE id = ?`, id).Scan(&currentQty, &currentFee, &currentExitPrice, &entryQty, &currentPnL)
+	if err != nil {
+		return fmt.Errorf("failed to get current position: %w", err)
+	}
+
+	// Calculate new quantity and fee
+	newQty := math.Round((currentQty-reduceQty)*10000) / 10000
+	newFee := currentFee + addFee
+	newPnL := currentPnL + addPnL
+
+	// Calculate weighted average exit price
+	// closedQty = entryQty - currentQty (already closed before this trade)
+	// newClosedQty = closedQty + reduceQty (total closed after this trade)
+	closedQty := entryQty - currentQty
+	newClosedQty := closedQty + reduceQty
+
+	var newExitPrice float64
+	if newClosedQty > 0 {
+		// Weighted average: (old_exit * old_closed + new_price * new_close) / total_closed
+		newExitPrice = (currentExitPrice*closedQty + exitPrice*reduceQty) / newClosedQty
+		newExitPrice = math.Round(newExitPrice*100) / 100 // Round to 2 decimal places
+	}
+
+	now := time.Now()
+	_, err = s.db.Exec(`
+		UPDATE trader_positions SET
+			quantity = ?,
+			fee = ?,
+			exit_price = ?,
+			realized_pnl = ?,
+			updated_at = ?
+		WHERE id = ?
+	`, newQty, newFee, newExitPrice, newPnL, now.Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("failed to reduce position quantity: %w", err)
+	}
+	return nil
+}
+
+// UpdatePositionExchangeInfo updates exchange_id and exchange_type for a position
+func (s *PositionStore) UpdatePositionExchangeInfo(id int64, exchangeID, exchangeType string) error {
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE trader_positions SET
+			exchange_id = ?,
+			exchange_type = ?,
+			updated_at = ?
+		WHERE id = ?
+	`, exchangeID, exchangeType, now.Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("failed to update position exchange info: %w", err)
+	}
+	return nil
+}
+
+// ClosePositionFully marks position as fully closed with exit time and accumulated PnL
+func (s *PositionStore) ClosePositionFully(
+	id int64,
+	exitPrice float64,
+	exitOrderID string,
+	exitTime time.Time,
+	totalRealizedPnL float64,
+	totalFee float64,
+	closeReason string,
+) error {
+	now := time.Now()
+	// When closing, restore quantity to entry_quantity so closed position shows original size
+	_, err := s.db.Exec(`
+		UPDATE trader_positions SET
+			quantity = CASE WHEN entry_quantity > 0 THEN entry_quantity ELSE quantity END,
+			exit_price = ?,
+			exit_order_id = ?,
+			exit_time = ?,
+			realized_pnl = ?,
+			fee = ?,
+			status = 'CLOSED',
+			close_reason = ?,
+			updated_at = ?
+		WHERE id = ?
+	`,
+		exitPrice, exitOrderID, exitTime.Format(time.RFC3339),
+		totalRealizedPnL, totalFee, closeReason, now.Format(time.RFC3339), id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to close position: %w", err)
+	}
+	return nil
+}
+
+// DeleteAllOpenPositions deletes all OPEN positions for a trader (used for snapshot reset)
+func (s *PositionStore) DeleteAllOpenPositions(traderID string) error {
+	_, err := s.db.Exec(`
+		DELETE FROM trader_positions WHERE trader_id = ? AND status = 'OPEN'
+	`, traderID)
+	if err != nil {
+		return fmt.Errorf("failed to delete open positions: %w", err)
+	}
+	return nil
+}
+
 // GetOpenPositions gets all open positions
 func (s *PositionStore) GetOpenPositions(traderID string) ([]*TraderPosition, error) {
 	rows, err := s.db.Query(`
-		SELECT id, trader_id, exchange_id, symbol, side, quantity, entry_price, entry_order_id,
+		SELECT id, trader_id, exchange_id, COALESCE(exchange_type, '') as exchange_type, symbol, side, quantity, COALESCE(entry_quantity, quantity) as entry_quantity, entry_price, entry_order_id,
 			entry_time, exit_price, exit_order_id, exit_time, realized_pnl, fee,
 			leverage, status, close_reason, created_at, updated_at
 		FROM trader_positions
@@ -170,38 +342,62 @@ func (s *PositionStore) GetOpenPositions(traderID string) ([]*TraderPosition, er
 }
 
 // GetOpenPositionBySymbol gets open position for specified symbol and direction
+// It tries both the normalized symbol (ETHUSDT) and base symbol (ETH) for compatibility
 func (s *PositionStore) GetOpenPositionBySymbol(traderID, symbol, side string) (*TraderPosition, error) {
 	var pos TraderPosition
 	var entryTime, exitTime, createdAt, updatedAt sql.NullString
 
+	// Try with the exact symbol first
 	err := s.db.QueryRow(`
-		SELECT id, trader_id, exchange_id, symbol, side, quantity, entry_price, entry_order_id,
+		SELECT id, trader_id, exchange_id, COALESCE(exchange_type, '') as exchange_type, symbol, side, quantity, COALESCE(entry_quantity, quantity) as entry_quantity, entry_price, entry_order_id,
 			entry_time, exit_price, exit_order_id, exit_time, realized_pnl, fee,
 			leverage, status, close_reason, created_at, updated_at
 		FROM trader_positions
 		WHERE trader_id = ? AND symbol = ? AND side = ? AND status = 'OPEN'
 		ORDER BY entry_time DESC LIMIT 1
 	`, traderID, symbol, side).Scan(
-		&pos.ID, &pos.TraderID, &pos.ExchangeID, &pos.Symbol, &pos.Side, &pos.Quantity,
+		&pos.ID, &pos.TraderID, &pos.ExchangeID, &pos.ExchangeType, &pos.Symbol, &pos.Side, &pos.Quantity, &pos.EntryQuantity,
 		&pos.EntryPrice, &pos.EntryOrderID, &entryTime, &pos.ExitPrice,
 		&pos.ExitOrderID, &exitTime, &pos.RealizedPnL, &pos.Fee,
 		&pos.Leverage, &pos.Status, &pos.CloseReason, &createdAt, &updatedAt,
 	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
+	if err == nil {
+		s.parsePositionTimes(&pos, entryTime, exitTime, createdAt, updatedAt)
+		return &pos, nil
 	}
 
-	s.parsePositionTimes(&pos, entryTime, exitTime, createdAt, updatedAt)
-	return &pos, nil
+	// If not found and symbol ends with USDT, try without USDT suffix (for backward compatibility)
+	if err == sql.ErrNoRows && strings.HasSuffix(symbol, "USDT") {
+		baseSymbol := strings.TrimSuffix(symbol, "USDT")
+		err = s.db.QueryRow(`
+			SELECT id, trader_id, exchange_id, COALESCE(exchange_type, '') as exchange_type, symbol, side, quantity, COALESCE(entry_quantity, quantity) as entry_quantity, entry_price, entry_order_id,
+				entry_time, exit_price, exit_order_id, exit_time, realized_pnl, fee,
+				leverage, status, close_reason, created_at, updated_at
+			FROM trader_positions
+			WHERE trader_id = ? AND symbol = ? AND side = ? AND status = 'OPEN'
+			ORDER BY entry_time DESC LIMIT 1
+		`, traderID, baseSymbol, side).Scan(
+			&pos.ID, &pos.TraderID, &pos.ExchangeID, &pos.ExchangeType, &pos.Symbol, &pos.Side, &pos.Quantity, &pos.EntryQuantity,
+			&pos.EntryPrice, &pos.EntryOrderID, &entryTime, &pos.ExitPrice,
+			&pos.ExitOrderID, &exitTime, &pos.RealizedPnL, &pos.Fee,
+			&pos.Leverage, &pos.Status, &pos.CloseReason, &createdAt, &updatedAt,
+		)
+		if err == nil {
+			s.parsePositionTimes(&pos, entryTime, exitTime, createdAt, updatedAt)
+			return &pos, nil
+		}
+	}
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return nil, err
 }
 
 // GetClosedPositions gets closed positions (historical records)
 func (s *PositionStore) GetClosedPositions(traderID string, limit int) ([]*TraderPosition, error) {
 	rows, err := s.db.Query(`
-		SELECT id, trader_id, exchange_id, symbol, side, quantity, entry_price, entry_order_id,
+		SELECT id, trader_id, exchange_id, COALESCE(exchange_type, '') as exchange_type, symbol, side, quantity, COALESCE(entry_quantity, quantity) as entry_quantity, entry_price, entry_order_id,
 			entry_time, exit_price, exit_order_id, exit_time, realized_pnl, fee,
 			leverage, status, close_reason, created_at, updated_at
 		FROM trader_positions
@@ -220,7 +416,7 @@ func (s *PositionStore) GetClosedPositions(traderID string, limit int) ([]*Trade
 // GetAllOpenPositions gets all traders' open positions (for global sync)
 func (s *PositionStore) GetAllOpenPositions() ([]*TraderPosition, error) {
 	rows, err := s.db.Query(`
-		SELECT id, trader_id, exchange_id, symbol, side, quantity, entry_price, entry_order_id,
+		SELECT id, trader_id, exchange_id, COALESCE(exchange_type, '') as exchange_type, symbol, side, quantity, COALESCE(entry_quantity, quantity) as entry_quantity, entry_price, entry_order_id,
 			entry_time, exit_price, exit_order_id, exit_time, realized_pnl, fee,
 			leverage, status, close_reason, created_at, updated_at
 		FROM trader_positions
@@ -272,6 +468,15 @@ func (s *PositionStore) GetPositionStats(traderID string) (map[string]interface{
 // GetFullStats gets complete trading statistics (compatible with TraderStats)
 func (s *PositionStore) GetFullStats(traderID string) (*TraderStats, error) {
 	stats := &TraderStats{}
+
+	// First check how many rows exist
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM trader_positions WHERE trader_id = ? AND status = 'CLOSED'`, traderID).Scan(&count); err == nil {
+		if count == 0 {
+			// No closed positions, return empty stats
+			return stats, nil
+		}
+	}
 
 	// Query all closed positions
 	rows, err := s.db.Query(`
@@ -342,19 +547,21 @@ func (s *PositionStore) GetFullStats(traderID string) (*TraderStats, error) {
 
 // RecentTrade recent trade record (for AI input)
 type RecentTrade struct {
-	Symbol      string  `json:"symbol"`
-	Side        string  `json:"side"` // long/short
-	EntryPrice  float64 `json:"entry_price"`
-	ExitPrice   float64 `json:"exit_price"`
-	RealizedPnL float64 `json:"realized_pnl"`
-	PnLPct      float64 `json:"pnl_pct"`
-	ExitTime    string  `json:"exit_time"`
+	Symbol       string  `json:"symbol"`
+	Side         string  `json:"side"` // long/short
+	EntryPrice   float64 `json:"entry_price"`
+	ExitPrice    float64 `json:"exit_price"`
+	RealizedPnL  float64 `json:"realized_pnl"`
+	PnLPct       float64 `json:"pnl_pct"`
+	EntryTime    int64   `json:"entry_time"`    // Entry time Unix timestamp (seconds)
+	ExitTime     int64   `json:"exit_time"`     // Exit time Unix timestamp (seconds)
+	HoldDuration string  `json:"hold_duration"` // Hold duration (持仓时长), e.g. "2h30m"
 }
 
 // GetRecentTrades gets recent closed trades
 func (s *PositionStore) GetRecentTrades(traderID string, limit int) ([]RecentTrade, error) {
 	rows, err := s.db.Query(`
-		SELECT symbol, side, entry_price, exit_price, realized_pnl, leverage, exit_time
+		SELECT symbol, side, entry_price, exit_price, realized_pnl, leverage, entry_time, exit_time
 		FROM trader_positions
 		WHERE trader_id = ? AND status = 'CLOSED'
 		ORDER BY exit_time DESC
@@ -369,9 +576,9 @@ func (s *PositionStore) GetRecentTrades(traderID string, limit int) ([]RecentTra
 	for rows.Next() {
 		var t RecentTrade
 		var leverage int
-		var exitTime sql.NullString
+		var entryTime, exitTime sql.NullString
 
-		err := rows.Scan(&t.Symbol, &t.Side, &t.EntryPrice, &t.ExitPrice, &t.RealizedPnL, &leverage, &exitTime)
+		err := rows.Scan(&t.Symbol, &t.Side, &t.EntryPrice, &t.ExitPrice, &t.RealizedPnL, &leverage, &entryTime, &exitTime)
 		if err != nil {
 			continue
 		}
@@ -392,17 +599,56 @@ func (s *PositionStore) GetRecentTrades(traderID string, limit int) ([]RecentTra
 			}
 		}
 
-		// Format time
+		// Parse entry time and exit time, return as Unix timestamps (seconds)
+		var parsedEntryTime, parsedExitTime time.Time
+		if entryTime.Valid {
+			if parsed, err := time.Parse(time.RFC3339, entryTime.String); err == nil {
+				parsedEntryTime = parsed.UTC()
+				t.EntryTime = parsedEntryTime.Unix() // Unix timestamp in seconds
+			}
+		}
 		if exitTime.Valid {
 			if parsed, err := time.Parse(time.RFC3339, exitTime.String); err == nil {
-				t.ExitTime = parsed.Format("01-02 15:04")
+				parsedExitTime = parsed.UTC()
+				t.ExitTime = parsedExitTime.Unix() // Unix timestamp in seconds
 			}
+		}
+
+		// Calculate hold duration
+		if !parsedEntryTime.IsZero() && !parsedExitTime.IsZero() {
+			duration := parsedExitTime.Sub(parsedEntryTime)
+			t.HoldDuration = formatDuration(duration)
 		}
 
 		trades = append(trades, t)
 	}
 
 	return trades, nil
+}
+
+// formatDuration formats a duration into a human-readable string
+// e.g. "2d3h", "5h30m", "45m", "30s"
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		hours := int(d.Hours())
+		minutes := int(d.Minutes()) % 60
+		if minutes == 0 {
+			return fmt.Sprintf("%dh", hours)
+		}
+		return fmt.Sprintf("%dh%dm", hours, minutes)
+	}
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	if hours == 0 {
+		return fmt.Sprintf("%dd", days)
+	}
+	return fmt.Sprintf("%dd%dh", days, hours)
 }
 
 // calculateSharpeRatioFromPnls calculates Sharpe ratio
@@ -431,19 +677,25 @@ func calculateSharpeRatioFromPnls(pnls []float64) float64 {
 }
 
 // calculateMaxDrawdownFromPnls calculates maximum drawdown
+// Uses a virtual starting equity of 10000 to calculate percentage drawdown
 func calculateMaxDrawdownFromPnls(pnls []float64) float64 {
 	if len(pnls) == 0 {
 		return 0
 	}
 
-	var cumulative, peak, maxDD float64
+	// Use virtual starting equity for percentage calculation
+	const startingEquity = 10000.0
+	equity := startingEquity
+	peak := startingEquity
+	var maxDD float64
+
 	for _, pnl := range pnls {
-		cumulative += pnl
-		if cumulative > peak {
-			peak = cumulative
+		equity += pnl
+		if equity > peak {
+			peak = equity
 		}
 		if peak > 0 {
-			dd := (peak - cumulative) / peak * 100
+			dd := (peak - equity) / peak * 100
 			if dd > maxDD {
 				maxDD = dd
 			}
@@ -461,7 +713,7 @@ func (s *PositionStore) scanPositions(rows *sql.Rows) ([]*TraderPosition, error)
 		var entryTime, exitTime, createdAt, updatedAt sql.NullString
 
 		err := rows.Scan(
-			&pos.ID, &pos.TraderID, &pos.ExchangeID, &pos.Symbol, &pos.Side, &pos.Quantity,
+			&pos.ID, &pos.TraderID, &pos.ExchangeID, &pos.ExchangeType, &pos.Symbol, &pos.Side, &pos.Quantity, &pos.EntryQuantity,
 			&pos.EntryPrice, &pos.EntryOrderID, &entryTime, &pos.ExitPrice,
 			&pos.ExitOrderID, &exitTime, &pos.RealizedPnL, &pos.Fee,
 			&pos.Leverage, &pos.Status, &pos.CloseReason, &createdAt, &updatedAt,
@@ -492,4 +744,656 @@ func (s *PositionStore) parsePositionTimes(pos *TraderPosition, entryTime, exitT
 	if updatedAt.Valid {
 		pos.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt.String)
 	}
+}
+
+// SymbolStats per-symbol trading statistics
+type SymbolStats struct {
+	Symbol      string  `json:"symbol"`
+	TotalTrades int     `json:"total_trades"`
+	WinTrades   int     `json:"win_trades"`
+	WinRate     float64 `json:"win_rate"`
+	TotalPnL    float64 `json:"total_pnl"`
+	AvgPnL      float64 `json:"avg_pnl"`
+	AvgHoldMins float64 `json:"avg_hold_mins"` // Average holding time in minutes
+}
+
+// GetSymbolStats gets per-symbol trading statistics
+func (s *PositionStore) GetSymbolStats(traderID string, limit int) ([]SymbolStats, error) {
+	rows, err := s.db.Query(`
+		SELECT
+			symbol,
+			COUNT(*) as total_trades,
+			SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as win_trades,
+			COALESCE(SUM(realized_pnl), 0) as total_pnl,
+			COALESCE(AVG(realized_pnl), 0) as avg_pnl,
+			COALESCE(AVG((julianday(exit_time) - julianday(entry_time)) * 24 * 60), 0) as avg_hold_mins
+		FROM trader_positions
+		WHERE trader_id = ? AND status = 'CLOSED'
+		GROUP BY symbol
+		ORDER BY total_pnl DESC
+		LIMIT ?
+	`, traderID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query symbol stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []SymbolStats
+	for rows.Next() {
+		var s SymbolStats
+		err := rows.Scan(&s.Symbol, &s.TotalTrades, &s.WinTrades, &s.TotalPnL, &s.AvgPnL, &s.AvgHoldMins)
+		if err != nil {
+			continue
+		}
+		if s.TotalTrades > 0 {
+			s.WinRate = float64(s.WinTrades) / float64(s.TotalTrades) * 100
+		}
+		stats = append(stats, s)
+	}
+	return stats, nil
+}
+
+// HoldingTimeStats holding duration analysis
+type HoldingTimeStats struct {
+	Range       string  `json:"range"`        // e.g., "<1h", "1-4h", "4-24h", ">24h"
+	TradeCount  int     `json:"trade_count"`
+	WinRate     float64 `json:"win_rate"`
+	AvgPnL      float64 `json:"avg_pnl"`
+}
+
+// GetHoldingTimeStats analyzes performance by holding duration
+func (s *PositionStore) GetHoldingTimeStats(traderID string) ([]HoldingTimeStats, error) {
+	rows, err := s.db.Query(`
+		WITH holding AS (
+			SELECT
+				realized_pnl,
+				(julianday(exit_time) - julianday(entry_time)) * 24 as hold_hours
+			FROM trader_positions
+			WHERE trader_id = ? AND status = 'CLOSED' AND exit_time IS NOT NULL
+		)
+		SELECT
+			CASE
+				WHEN hold_hours < 1 THEN '<1h'
+				WHEN hold_hours < 4 THEN '1-4h'
+				WHEN hold_hours < 24 THEN '4-24h'
+				ELSE '>24h'
+			END as time_range,
+			COUNT(*) as trade_count,
+			SUM(CASE WHEN realized_pnl > 0 THEN 1.0 ELSE 0.0 END) / COUNT(*) * 100 as win_rate,
+			AVG(realized_pnl) as avg_pnl
+		FROM holding
+		GROUP BY time_range
+		ORDER BY
+			CASE time_range
+				WHEN '<1h' THEN 1
+				WHEN '1-4h' THEN 2
+				WHEN '4-24h' THEN 3
+				ELSE 4
+			END
+	`, traderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query holding time stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []HoldingTimeStats
+	for rows.Next() {
+		var s HoldingTimeStats
+		err := rows.Scan(&s.Range, &s.TradeCount, &s.WinRate, &s.AvgPnL)
+		if err != nil {
+			continue
+		}
+		stats = append(stats, s)
+	}
+	return stats, nil
+}
+
+// DirectionStats long/short performance comparison
+type DirectionStats struct {
+	Side       string  `json:"side"`
+	TradeCount int     `json:"trade_count"`
+	WinRate    float64 `json:"win_rate"`
+	TotalPnL   float64 `json:"total_pnl"`
+	AvgPnL     float64 `json:"avg_pnl"`
+}
+
+// GetDirectionStats analyzes long vs short performance
+func (s *PositionStore) GetDirectionStats(traderID string) ([]DirectionStats, error) {
+	rows, err := s.db.Query(`
+		SELECT
+			side,
+			COUNT(*) as trade_count,
+			SUM(CASE WHEN realized_pnl > 0 THEN 1.0 ELSE 0.0 END) / COUNT(*) * 100 as win_rate,
+			COALESCE(SUM(realized_pnl), 0) as total_pnl,
+			COALESCE(AVG(realized_pnl), 0) as avg_pnl
+		FROM trader_positions
+		WHERE trader_id = ? AND status = 'CLOSED'
+		GROUP BY side
+	`, traderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query direction stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []DirectionStats
+	for rows.Next() {
+		var s DirectionStats
+		err := rows.Scan(&s.Side, &s.TradeCount, &s.WinRate, &s.TotalPnL, &s.AvgPnL)
+		if err != nil {
+			continue
+		}
+		stats = append(stats, s)
+	}
+	return stats, nil
+}
+
+// HistorySummary comprehensive trading history for AI context
+type HistorySummary struct {
+	// Overall stats
+	TotalTrades    int     `json:"total_trades"`
+	WinRate        float64 `json:"win_rate"`
+	TotalPnL       float64 `json:"total_pnl"`
+	AvgTradeReturn float64 `json:"avg_trade_return"` // Percentage
+
+	// Best/Worst performers
+	BestSymbols  []SymbolStats `json:"best_symbols"`  // Top 3 profitable
+	WorstSymbols []SymbolStats `json:"worst_symbols"` // Top 3 losing
+
+	// Direction analysis
+	LongWinRate  float64 `json:"long_win_rate"`
+	ShortWinRate float64 `json:"short_win_rate"`
+	LongPnL      float64 `json:"long_pnl"`
+	ShortPnL     float64 `json:"short_pnl"`
+
+	// Time analysis
+	AvgHoldingMins float64 `json:"avg_holding_mins"`
+	BestHoldRange  string  `json:"best_hold_range"` // e.g., "1-4h"
+
+	// Recent performance (last 20 trades)
+	RecentWinRate float64 `json:"recent_win_rate"`
+	RecentPnL     float64 `json:"recent_pnl"`
+
+	// Streak info
+	CurrentStreak     int    `json:"current_streak"`      // Positive = wins, negative = losses
+	MaxWinStreak      int    `json:"max_win_streak"`
+	MaxLoseStreak     int    `json:"max_lose_streak"`
+}
+
+// GetHistorySummary generates comprehensive AI context summary
+func (s *PositionStore) GetHistorySummary(traderID string) (*HistorySummary, error) {
+	summary := &HistorySummary{}
+
+	// Get overall stats
+	fullStats, err := s.GetFullStats(traderID)
+	if err != nil {
+		return nil, err
+	}
+	summary.TotalTrades = fullStats.TotalTrades
+	summary.WinRate = fullStats.WinRate
+	summary.TotalPnL = fullStats.TotalPnL
+	if fullStats.TotalTrades > 0 {
+		summary.AvgTradeReturn = fullStats.TotalPnL / float64(fullStats.TotalTrades)
+	}
+
+	// Get symbol stats - best performers
+	symbolStats, _ := s.GetSymbolStats(traderID, 20)
+	if len(symbolStats) > 0 {
+		// Best 3
+		for i := 0; i < len(symbolStats) && i < 3; i++ {
+			if symbolStats[i].TotalPnL > 0 {
+				summary.BestSymbols = append(summary.BestSymbols, symbolStats[i])
+			}
+		}
+		// Worst 3 (from the end)
+		for i := len(symbolStats) - 1; i >= 0 && len(summary.WorstSymbols) < 3; i-- {
+			if symbolStats[i].TotalPnL < 0 {
+				summary.WorstSymbols = append(summary.WorstSymbols, symbolStats[i])
+			}
+		}
+	}
+
+	// Get direction stats
+	dirStats, _ := s.GetDirectionStats(traderID)
+	for _, d := range dirStats {
+		if d.Side == "LONG" {
+			summary.LongWinRate = d.WinRate
+			summary.LongPnL = d.TotalPnL
+		} else if d.Side == "SHORT" {
+			summary.ShortWinRate = d.WinRate
+			summary.ShortPnL = d.TotalPnL
+		}
+	}
+
+	// Get holding time stats
+	holdStats, _ := s.GetHoldingTimeStats(traderID)
+	var bestHoldWinRate float64
+	for _, h := range holdStats {
+		if h.WinRate > bestHoldWinRate && h.TradeCount >= 3 {
+			bestHoldWinRate = h.WinRate
+			summary.BestHoldRange = h.Range
+		}
+	}
+
+	// Calculate average holding time
+	var avgHold sql.NullFloat64
+	s.db.QueryRow(`
+		SELECT AVG((julianday(exit_time) - julianday(entry_time)) * 24 * 60)
+		FROM trader_positions
+		WHERE trader_id = ? AND status = 'CLOSED' AND exit_time IS NOT NULL
+	`, traderID).Scan(&avgHold)
+	if avgHold.Valid {
+		summary.AvgHoldingMins = avgHold.Float64
+	}
+
+	// Get recent 20 trades performance
+	var recentWins int
+	var recentTotal int
+	var recentPnL float64
+	rows, err := s.db.Query(`
+		SELECT realized_pnl FROM trader_positions
+		WHERE trader_id = ? AND status = 'CLOSED'
+		ORDER BY exit_time DESC LIMIT 20
+	`, traderID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var pnl float64
+			rows.Scan(&pnl)
+			recentTotal++
+			recentPnL += pnl
+			if pnl > 0 {
+				recentWins++
+			}
+		}
+	}
+	if recentTotal > 0 {
+		summary.RecentWinRate = float64(recentWins) / float64(recentTotal) * 100
+		summary.RecentPnL = recentPnL
+	}
+
+	// Calculate streaks
+	s.calculateStreaks(traderID, summary)
+
+	return summary, nil
+}
+
+// calculateStreaks calculates win/loss streaks
+func (s *PositionStore) calculateStreaks(traderID string, summary *HistorySummary) {
+	rows, err := s.db.Query(`
+		SELECT realized_pnl FROM trader_positions
+		WHERE trader_id = ? AND status = 'CLOSED'
+		ORDER BY exit_time DESC
+	`, traderID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	var currentStreak, maxWin, maxLose int
+	var prevWin *bool
+	isFirst := true
+
+	for rows.Next() {
+		var pnl float64
+		rows.Scan(&pnl)
+		isWin := pnl > 0
+
+		if isFirst {
+			if isWin {
+				currentStreak = 1
+			} else {
+				currentStreak = -1
+			}
+			isFirst = false
+		}
+
+		if prevWin == nil {
+			prevWin = &isWin
+		} else if *prevWin == isWin {
+			if isWin {
+				currentStreak++
+				if currentStreak > maxWin {
+					maxWin = currentStreak
+				}
+			} else {
+				currentStreak--
+				if -currentStreak > maxLose {
+					maxLose = -currentStreak
+				}
+			}
+		} else {
+			if isWin {
+				currentStreak = 1
+			} else {
+				currentStreak = -1
+			}
+			*prevWin = isWin
+		}
+	}
+
+	summary.CurrentStreak = currentStreak
+	summary.MaxWinStreak = maxWin
+	summary.MaxLoseStreak = maxLose
+}
+
+// =============================================================================
+// Deduplication and Sync Methods
+// =============================================================================
+
+// ExistsWithExchangePositionID checks if a position with the given exchange position ID already exists
+// Note: Uses exchange_id (account UUID) for deduplication, not trader_id
+// This ensures that the same position from an exchange account is not duplicated across different traders
+func (s *PositionStore) ExistsWithExchangePositionID(exchangeID, exchangePositionID string) (bool, error) {
+	if exchangePositionID == "" {
+		return false, nil
+	}
+
+	var count int
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM trader_positions
+		WHERE exchange_id = ? AND exchange_position_id = ?
+	`, exchangeID, exchangePositionID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check position existence: %w", err)
+	}
+	return count > 0, nil
+}
+
+// GetOpenPositionByExchangePositionID gets an OPEN position by exchange_position_id
+// Used for accumulating into existing position when duplicate exchange_position_id is detected
+func (s *PositionStore) GetOpenPositionByExchangePositionID(exchangeID, exchangePositionID string) (*TraderPosition, error) {
+	if exchangePositionID == "" {
+		return nil, nil
+	}
+
+	var pos TraderPosition
+	var entryTime, exitTime, createdAt, updatedAt sql.NullString
+
+	err := s.db.QueryRow(`
+		SELECT id, trader_id, exchange_id, COALESCE(exchange_type, '') as exchange_type, symbol, side, quantity, COALESCE(entry_quantity, quantity) as entry_quantity, entry_price, entry_order_id,
+			entry_time, exit_price, exit_order_id, exit_time, realized_pnl, fee,
+			leverage, status, close_reason, created_at, updated_at
+		FROM trader_positions
+		WHERE exchange_id = ? AND exchange_position_id = ? AND status = 'OPEN'
+		LIMIT 1
+	`, exchangeID, exchangePositionID).Scan(
+		&pos.ID, &pos.TraderID, &pos.ExchangeID, &pos.ExchangeType, &pos.Symbol, &pos.Side, &pos.Quantity, &pos.EntryQuantity,
+		&pos.EntryPrice, &pos.EntryOrderID, &entryTime, &pos.ExitPrice,
+		&pos.ExitOrderID, &exitTime, &pos.RealizedPnL, &pos.Fee,
+		&pos.Leverage, &pos.Status, &pos.CloseReason, &createdAt, &updatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	s.parsePositionTimes(&pos, entryTime, exitTime, createdAt, updatedAt)
+	return &pos, nil
+}
+
+// CreateFromClosedPnL creates a closed position record from exchange closed PnL data
+// This is used for syncing historical positions from exchange
+// Returns true if created, false if already exists (deduped) or invalid data
+func (s *PositionStore) CreateFromClosedPnL(traderID, exchangeID, exchangeType string, record *ClosedPnLRecord) (bool, error) {
+	// ==========================================================================
+	// Step 1: Validate required fields
+	// ==========================================================================
+	if record.Symbol == "" {
+		return false, nil // Skip: no symbol
+	}
+
+	// Normalize and validate side
+	side := strings.ToUpper(record.Side)
+	if side == "LONG" || side == "BUY" {
+		side = "LONG"
+	} else if side == "SHORT" || side == "SELL" {
+		side = "SHORT"
+	} else {
+		return false, nil // Skip: invalid side
+	}
+
+	// Validate quantity
+	if record.Quantity <= 0 {
+		return false, nil // Skip: invalid quantity
+	}
+
+	// Validate prices (entry price can be calculated, but should be positive)
+	if record.ExitPrice <= 0 {
+		return false, nil // Skip: invalid exit price
+	}
+	if record.EntryPrice <= 0 {
+		return false, nil // Skip: invalid entry price
+	}
+
+	// ==========================================================================
+	// Step 2: Generate unique exchange position ID for deduplication
+	// ==========================================================================
+	exchangePositionID := record.ExchangeID
+	if exchangePositionID == "" {
+		// Fallback: generate from symbol + side + exit time + pnl (to ensure uniqueness)
+		exchangePositionID = fmt.Sprintf("%s_%s_%d_%.8f",
+			record.Symbol, side, record.ExitTime.UnixMilli(), record.RealizedPnL)
+	}
+
+	// ==========================================================================
+	// Step 3: Check for duplicates based on (exchange_id, exchange_position_id)
+	// ==========================================================================
+	exists, err := s.ExistsWithExchangePositionID(exchangeID, exchangePositionID)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil // Already exists, skip
+	}
+
+	// ==========================================================================
+	// Step 4: Handle timestamps
+	// ==========================================================================
+	now := time.Now()
+	exitTime := record.ExitTime
+	entryTime := record.EntryTime
+
+	// Validate exit time
+	if exitTime.IsZero() || exitTime.Year() < 2000 {
+		return false, nil // Skip: invalid exit time
+	}
+
+	// Handle zero entry time - use exit time as approximation
+	if entryTime.IsZero() || entryTime.Year() < 2000 {
+		entryTime = exitTime
+	}
+
+	// Entry time should not be after exit time
+	if entryTime.After(exitTime) {
+		entryTime = exitTime
+	}
+
+	// ==========================================================================
+	// Step 5: Insert into database
+	// ==========================================================================
+	_, err = s.db.Exec(`
+		INSERT INTO trader_positions (
+			trader_id, exchange_id, exchange_type, exchange_position_id, symbol, side, quantity,
+			entry_price, entry_order_id, entry_time,
+			exit_price, exit_order_id, exit_time,
+			realized_pnl, fee, leverage, status, close_reason, source,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CLOSED', ?, 'sync', ?, ?)
+	`,
+		traderID, exchangeID, exchangeType, exchangePositionID, record.Symbol, side, record.Quantity,
+		record.EntryPrice, "", entryTime.Format(time.RFC3339),
+		record.ExitPrice, record.OrderID, exitTime.Format(time.RFC3339),
+		record.RealizedPnL, record.Fee, record.Leverage, record.CloseType,
+		now.Format(time.RFC3339), now.Format(time.RFC3339),
+	)
+	if err != nil {
+		// Duplicate key error, treat as already exists
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to create position from closed PnL: %w", err)
+	}
+
+	return true, nil
+}
+
+// ClosedPnLRecord represents a closed position record from exchange (duplicated here for store package)
+type ClosedPnLRecord struct {
+	Symbol      string
+	Side        string
+	EntryPrice  float64
+	ExitPrice   float64
+	Quantity    float64
+	RealizedPnL float64
+	Fee         float64
+	Leverage    int
+	EntryTime   time.Time
+	ExitTime    time.Time
+	OrderID     string
+	CloseType   string
+	ExchangeID  string
+}
+
+// GetLastClosedPositionTime gets the most recent exit time from closed positions
+// This is used to determine the start time for syncing new closed positions
+func (s *PositionStore) GetLastClosedPositionTime(traderID string) (time.Time, error) {
+	var exitTime sql.NullString
+	err := s.db.QueryRow(`
+		SELECT exit_time FROM trader_positions
+		WHERE trader_id = ? AND status = 'CLOSED' AND exit_time IS NOT NULL
+		ORDER BY exit_time DESC LIMIT 1
+	`, traderID).Scan(&exitTime)
+
+	if err == sql.ErrNoRows || !exitTime.Valid {
+		// No closed positions, return 30 days ago as default
+		return time.Now().Add(-30 * 24 * time.Hour), nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to get last closed position time: %w", err)
+	}
+
+	t, _ := time.Parse(time.RFC3339, exitTime.String)
+	return t, nil
+}
+
+// CreateOpenPosition creates an open position record with exchange position ID
+// NOTE: This function should only be called when GetOpenPositionBySymbol returns nil.
+// If a position with the same exchange_position_id already exists (e.g., due to same millisecond trades),
+// this function will accumulate into the existing position instead of silently skipping.
+func (s *PositionStore) CreateOpenPosition(pos *TraderPosition) error {
+	// Check if already exists by exchange position ID
+	// If exists, accumulate into that position instead of skipping
+	if pos.ExchangePositionID != "" && pos.ExchangeID != "" {
+		existingPos, err := s.GetOpenPositionByExchangePositionID(pos.ExchangeID, pos.ExchangePositionID)
+		if err != nil {
+			return err
+		}
+		if existingPos != nil {
+			// Position with same exchange_position_id exists and is OPEN, accumulate into it
+			return s.UpdatePositionQuantityAndPrice(existingPos.ID, pos.Quantity, pos.EntryPrice, pos.Fee)
+		}
+		// Check if position exists but is CLOSED
+		exists, err := s.ExistsWithExchangePositionID(pos.ExchangeID, pos.ExchangePositionID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			// Position exists but is CLOSED, skip (this is a valid case for historical sync)
+			return nil
+		}
+	}
+
+	now := time.Now()
+	pos.CreatedAt = now
+	pos.UpdatedAt = now
+	// Only set status to OPEN if not already set (allows creating CLOSED positions)
+	if pos.Status == "" {
+		pos.Status = "OPEN"
+	}
+	if pos.Source == "" {
+		pos.Source = "system"
+	}
+	// Set EntryQuantity to same as Quantity if not already set
+	if pos.EntryQuantity == 0 {
+		pos.EntryQuantity = pos.Quantity
+	}
+
+	// Format exit time if present
+	var exitTimeStr *string
+	if pos.ExitTime != nil {
+		s := pos.ExitTime.Format(time.RFC3339)
+		exitTimeStr = &s
+	}
+
+	result, err := s.db.Exec(`
+		INSERT INTO trader_positions (
+			trader_id, exchange_id, exchange_type, exchange_position_id, symbol, side, quantity, entry_quantity,
+			entry_price, entry_order_id, entry_time, exit_price, exit_order_id, exit_time,
+			realized_pnl, leverage, status, source, fee,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		pos.TraderID, pos.ExchangeID, pos.ExchangeType, pos.ExchangePositionID, pos.Symbol, pos.Side, pos.Quantity, pos.EntryQuantity,
+		pos.EntryPrice, pos.EntryOrderID, pos.EntryTime.Format(time.RFC3339), pos.ExitPrice, pos.ExitOrderID, exitTimeStr,
+		pos.RealizedPnL, pos.Leverage, pos.Status, pos.Source, pos.Fee, now.Format(time.RFC3339), now.Format(time.RFC3339),
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			// UNIQUE constraint failed, try to accumulate into existing position
+			existingPos, findErr := s.GetOpenPositionByExchangePositionID(pos.ExchangeID, pos.ExchangePositionID)
+			if findErr != nil {
+				return findErr
+			}
+			if existingPos != nil {
+				return s.UpdatePositionQuantityAndPrice(existingPos.ID, pos.Quantity, pos.EntryPrice, pos.Fee)
+			}
+			// Position is CLOSED, skip
+			return nil
+		}
+		return fmt.Errorf("failed to create open position: %w", err)
+	}
+
+	id, _ := result.LastInsertId()
+	pos.ID = id
+	return nil
+}
+
+// ClosePositionWithAccurateData closes a position with accurate data from exchange
+func (s *PositionStore) ClosePositionWithAccurateData(id int64, exitPrice float64, exitOrderID string, exitTime time.Time, realizedPnL float64, fee float64, closeReason string) error {
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE trader_positions SET
+			exit_price = ?, exit_order_id = ?, exit_time = ?,
+			realized_pnl = ?, fee = ?, status = 'CLOSED',
+			close_reason = ?, updated_at = ?
+		WHERE id = ?
+	`,
+		exitPrice, exitOrderID, exitTime.Format(time.RFC3339),
+		realizedPnL, fee, closeReason, now.Format(time.RFC3339), id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to close position with accurate data: %w", err)
+	}
+	return nil
+}
+
+// SyncClosedPositions syncs closed positions from exchange to local database
+// Returns (created count, skipped count, error)
+func (s *PositionStore) SyncClosedPositions(traderID, exchangeID, exchangeType string, records []ClosedPnLRecord) (int, int, error) {
+	created, skipped := 0, 0
+	for _, record := range records {
+		rec := record // Create local copy to avoid closure issues
+		wasCreated, err := s.CreateFromClosedPnL(traderID, exchangeID, exchangeType, &rec)
+		if err != nil {
+			return created, skipped, fmt.Errorf("failed to sync position: %w", err)
+		}
+		if wasCreated {
+			created++
+		} else {
+			skipped++
+		}
+	}
+	return created, skipped, nil
 }

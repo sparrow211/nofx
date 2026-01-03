@@ -82,6 +82,7 @@ type IndicatorConfig struct {
 	EnableMACD        bool `json:"enable_macd"`
 	EnableRSI         bool `json:"enable_rsi"`
 	EnableATR         bool `json:"enable_atr"`
+	EnableBOLL        bool `json:"enable_boll"`         // Bollinger Bands
 	EnableVolume      bool `json:"enable_volume"`
 	EnableOI          bool `json:"enable_oi"`           // open interest
 	EnableFundingRate bool `json:"enable_funding_rate"` // funding rate
@@ -91,11 +92,20 @@ type IndicatorConfig struct {
 	RSIPeriods []int `json:"rsi_periods,omitempty"` // default [7, 14]
 	// ATR period configuration
 	ATRPeriods []int `json:"atr_periods,omitempty"` // default [14]
+	// BOLL period configuration (period, standard deviation multiplier is fixed at 2)
+	BOLLPeriods []int `json:"boll_periods,omitempty"` // default [20] - can select multiple timeframes
 	// external data sources
 	ExternalDataSources []ExternalDataSource `json:"external_data_sources,omitempty"`
 	// quantitative data sources (capital flow, position changes, price changes)
-	EnableQuantData bool   `json:"enable_quant_data"`            // whether to enable quantitative data
-	QuantDataAPIURL string `json:"quant_data_api_url,omitempty"` // quantitative data API address
+	EnableQuantData    bool   `json:"enable_quant_data"`              // whether to enable quantitative data
+	QuantDataAPIURL    string `json:"quant_data_api_url,omitempty"`   // quantitative data API address
+	EnableQuantOI      bool   `json:"enable_quant_oi"`                // whether to show OI data
+	EnableQuantNetflow bool   `json:"enable_quant_netflow"`           // whether to show Netflow data
+	// OI ranking data (market-wide open interest increase/decrease rankings)
+	EnableOIRanking   bool   `json:"enable_oi_ranking"`             // whether to enable OI ranking data
+	OIRankingAPIURL   string `json:"oi_ranking_api_url,omitempty"`  // OI ranking API base URL
+	OIRankingDuration string `json:"oi_ranking_duration,omitempty"` // duration: 1h, 4h, 24h
+	OIRankingLimit    int    `json:"oi_ranking_limit,omitempty"`    // number of entries (default 10)
 }
 
 // KlineConfig K-line configuration
@@ -126,22 +136,46 @@ type ExternalDataSource struct {
 }
 
 // RiskControlConfig risk control configuration
+// All parameters are clearly defined without ambiguity:
+//
+// Position Limits:
+//   - MaxPositions: max number of coins held simultaneously (CODE ENFORCED)
+//
+// Trading Leverage (exchange leverage for opening positions):
+//   - BTCETHMaxLeverage: BTC/ETH max exchange leverage (AI guided)
+//   - AltcoinMaxLeverage: Altcoin max exchange leverage (AI guided)
+//
+// Position Value Limits (single position notional value / account equity):
+//   - BTCETHMaxPositionValueRatio: BTC/ETH max = equity × ratio (CODE ENFORCED)
+//   - AltcoinMaxPositionValueRatio: Altcoin max = equity × ratio (CODE ENFORCED)
+//
+// Risk Controls:
+//   - MaxMarginUsage: max margin utilization percentage (CODE ENFORCED)
+//   - MinPositionSize: minimum position size in USDT (CODE ENFORCED)
+//   - MinRiskRewardRatio: min take_profit / stop_loss ratio (AI guided)
+//   - MinConfidence: min AI confidence to open position (AI guided)
 type RiskControlConfig struct {
-	// maximum number of positions
+	// Max number of coins held simultaneously (CODE ENFORCED)
 	MaxPositions int `json:"max_positions"`
-	// BTC/ETH maximum leverage
+
+	// BTC/ETH exchange leverage for opening positions (AI guided)
 	BTCETHMaxLeverage int `json:"btc_eth_max_leverage"`
-	// altcoin maximum leverage
+	// Altcoin exchange leverage for opening positions (AI guided)
 	AltcoinMaxLeverage int `json:"altcoin_max_leverage"`
-	// minimum risk-reward ratio
-	MinRiskRewardRatio float64 `json:"min_risk_reward_ratio"`
-	// maximum margin usage
+
+	// BTC/ETH single position max value = equity × this ratio (CODE ENFORCED, default: 5)
+	BTCETHMaxPositionValueRatio float64 `json:"btc_eth_max_position_value_ratio"`
+	// Altcoin single position max value = equity × this ratio (CODE ENFORCED, default: 1)
+	AltcoinMaxPositionValueRatio float64 `json:"altcoin_max_position_value_ratio"`
+
+	// Max margin utilization (e.g. 0.9 = 90%) (CODE ENFORCED)
 	MaxMarginUsage float64 `json:"max_margin_usage"`
-	// maximum position ratio per coin (relative to account equity)
-	MaxPositionRatio float64 `json:"max_position_ratio"`
-	// minimum position size (USDT)
+	// Min position size in USDT (CODE ENFORCED)
 	MinPositionSize float64 `json:"min_position_size"`
-	// minimum confidence level
+
+	// Min take_profit / stop_loss ratio (AI guided)
+	MinRiskRewardRatio float64 `json:"min_risk_reward_ratio"`
+	// Min AI confidence to open position (AI guided)
 	MinConfidence int `json:"min_confidence"`
 }
 
@@ -190,7 +224,7 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 		CoinSource: CoinSourceConfig{
 			SourceType:     "coinpool",
 			UseCoinPool:    true,
-			CoinPoolLimit:  30,
+			CoinPoolLimit:  10,
 			CoinPoolAPIURL: "http://nofxaios.com:30006/api/ai500/list?auth=cm_568c67eae410d912c54c",
 			UseOITop:       false,
 			OITopLimit:     20,
@@ -210,24 +244,34 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			EnableMACD:        false,
 			EnableRSI:         false,
 			EnableATR:         false,
+			EnableBOLL:        false,
 			EnableVolume:      true,
 			EnableOI:          true,
 			EnableFundingRate: true,
 			EMAPeriods:        []int{20, 50},
 			RSIPeriods:        []int{7, 14},
 			ATRPeriods:        []int{14},
-			EnableQuantData:   true,
-			QuantDataAPIURL:   "http://nofxaios.com:30006/api/coin/{symbol}?include=netflow,oi,price&auth=cm_568c67eae410d912c54c",
+			BOLLPeriods:       []int{20},
+			EnableQuantData:    true,
+			QuantDataAPIURL:    "http://nofxaios.com:30006/api/coin/{symbol}?include=netflow,oi,price&auth=cm_568c67eae410d912c54c",
+			EnableQuantOI:      true,
+			EnableQuantNetflow: true,
+			// OI ranking data - market-wide OI increase/decrease rankings
+			EnableOIRanking:   true,
+			OIRankingAPIURL:   "http://nofxaios.com:30006",
+			OIRankingDuration: "1h",
+			OIRankingLimit:    10,
 		},
 		RiskControl: RiskControlConfig{
-			MaxPositions:       3,
-			BTCETHMaxLeverage:  5,
-			AltcoinMaxLeverage: 5,
-			MinRiskRewardRatio: 3.0,
-			MaxMarginUsage:     0.9,
-			MaxPositionRatio:   1.5,
-			MinPositionSize:    12,
-			MinConfidence:      75,
+			MaxPositions:                    3,   // Max 3 coins simultaneously (CODE ENFORCED)
+			BTCETHMaxLeverage:               5,   // BTC/ETH exchange leverage (AI guided)
+			AltcoinMaxLeverage:              5,   // Altcoin exchange leverage (AI guided)
+			BTCETHMaxPositionValueRatio:     5.0, // BTC/ETH: max position = 5x equity (CODE ENFORCED)
+			AltcoinMaxPositionValueRatio:    1.0, // Altcoin: max position = 1x equity (CODE ENFORCED)
+			MaxMarginUsage:                  0.9, // Max 90% margin usage (CODE ENFORCED)
+			MinPositionSize:                 12,  // Min 12 USDT per position (CODE ENFORCED)
+			MinRiskRewardRatio:              3.0, // Min 3:1 profit/loss ratio (AI guided)
+			MinConfidence:                   75,  // Min 75% confidence (AI guided)
 		},
 	}
 

@@ -1,8 +1,10 @@
-import { Clock, Activity, Database, TrendingUp, BarChart2, Info, Lock } from 'lucide-react'
+import { Clock, Activity, Database, TrendingUp, BarChart2, Info, Lock, LineChart } from 'lucide-react'
 import type { IndicatorConfig } from '../../types'
 
 // Default API URL for quant data (must contain {symbol} placeholder)
 const DEFAULT_QUANT_DATA_API_URL = 'http://nofxaios.com:30006/api/coin/{symbol}?include=netflow,oi,price&auth=cm_568c67eae410d912c54c'
+// Default API base URL for OI ranking data
+const DEFAULT_OI_RANKING_API_URL = 'http://nofxaios.com:30006'
 
 interface IndicatorEditorProps {
   config: IndicatorConfig
@@ -70,6 +72,8 @@ export function IndicatorEditor({
       rsiDesc: { zh: '相对强弱指标', en: 'Relative Strength Index' },
       atr: { zh: 'ATR', en: 'ATR' },
       atrDesc: { zh: '真实波幅均值', en: 'Average True Range' },
+      boll: { zh: 'BOLL 布林带', en: 'Bollinger Bands' },
+      bollDesc: { zh: '布林带指标（上中下轨）', en: 'Upper/Middle/Lower Bands' },
       volume: { zh: '成交量', en: 'Volume' },
       volumeDesc: { zh: '交易量分析', en: 'Trading volume analysis' },
       oi: { zh: '持仓量', en: 'Open Interest' },
@@ -81,6 +85,13 @@ export function IndicatorEditor({
       quantDataUrl: { zh: '数据接口 URL', en: 'Data API URL' },
       fillDefault: { zh: '填入默认', en: 'Fill Default' },
       symbolPlaceholder: { zh: '{symbol} 会被替换为币种', en: '{symbol} will be replaced with coin' },
+
+      // OI Ranking
+      oiRanking: { zh: 'OI 排行数据', en: 'OI Ranking Data' },
+      oiRankingDesc: { zh: '市场持仓量增减排行，反映资金流向', en: 'Market-wide OI changes, reflects capital flow' },
+      oiRankingDuration: { zh: '时间周期', en: 'Duration' },
+      oiRankingLimit: { zh: '排行数量', en: 'Top N' },
+      oiRankingNote: { zh: '显示持仓量增加/减少的币种排行，帮助发现资金流向', en: 'Shows coins with OI increase/decrease, helps identify capital flow' },
 
       // Tips
       aiCanCalculate: { zh: '💡 提示：AI 可自行计算这些指标，开启可减少 AI 计算量', en: '💡 Tip: AI can calculate these, enabling reduces AI workload' },
@@ -286,6 +297,7 @@ export function IndicatorEditor({
               { key: 'enable_macd', label: 'macd', desc: 'macdDesc', color: '#a855f7' },
               { key: 'enable_rsi', label: 'rsi', desc: 'rsiDesc', color: '#F6465D', periodKey: 'rsi_periods', defaultPeriods: '7,14' },
               { key: 'enable_atr', label: 'atr', desc: 'atrDesc', color: '#60a5fa', periodKey: 'atr_periods', defaultPeriods: '14' },
+              { key: 'enable_boll', label: 'boll', desc: 'bollDesc', color: '#ec4899', periodKey: 'boll_periods', defaultPeriods: '20' },
             ].map(({ key, label, desc, color, periodKey, defaultPeriods }) => (
               <div
                 key={key}
@@ -428,6 +440,106 @@ export function IndicatorEditor({
                 style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
               />
               <p className="text-[10px] mt-1" style={{ color: '#5E6673' }}>{t('symbolPlaceholder')}</p>
+
+              {/* OI and Netflow toggles */}
+              <div className="flex gap-4 mt-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={config.enable_quant_oi !== false}
+                    onChange={(e) => !disabled && onChange({ ...config, enable_quant_oi: e.target.checked })}
+                    disabled={disabled}
+                    className="w-3.5 h-3.5 rounded accent-blue-500"
+                  />
+                  <span className="text-xs" style={{ color: '#EAECEF' }}>OI</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={config.enable_quant_netflow !== false}
+                    onChange={(e) => !disabled && onChange({ ...config, enable_quant_netflow: e.target.checked })}
+                    disabled={disabled}
+                    className="w-3.5 h-3.5 rounded accent-blue-500"
+                  />
+                  <span className="text-xs" style={{ color: '#EAECEF' }}>Netflow</span>
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Section 5: OI Ranking Data (Market-wide) */}
+      <div className="rounded-lg overflow-hidden" style={{ background: '#0B0E11', border: '1px solid #2B3139' }}>
+        <div className="px-3 py-2 flex items-center gap-2" style={{ background: '#1E2329', borderBottom: '1px solid #2B3139' }}>
+          <LineChart className="w-4 h-4" style={{ color: '#22c55e' }} />
+          <span className="text-sm font-medium" style={{ color: '#EAECEF' }}>{t('oiRanking')}</span>
+          <span className="text-xs" style={{ color: '#848E9C' }}>- {t('oiRankingDesc')}</span>
+        </div>
+
+        <div className="p-3 space-y-3">
+          {/* Enable Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full" style={{ background: '#22c55e' }} />
+              <span className="text-xs font-medium" style={{ color: '#EAECEF' }}>{t('oiRanking')}</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={config.enable_oi_ranking || false}
+              onChange={(e) => !disabled && onChange({
+                ...config,
+                enable_oi_ranking: e.target.checked,
+                // Set defaults when enabling
+                ...(e.target.checked && !config.oi_ranking_api_url ? { oi_ranking_api_url: DEFAULT_OI_RANKING_API_URL } : {}),
+                ...(e.target.checked && !config.oi_ranking_duration ? { oi_ranking_duration: '1h' } : {}),
+                ...(e.target.checked && !config.oi_ranking_limit ? { oi_ranking_limit: 10 } : {}),
+              })}
+              disabled={disabled}
+              className="w-4 h-4 rounded accent-green-500"
+            />
+          </div>
+
+          {/* Settings */}
+          {config.enable_oi_ranking && (
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                {/* Duration */}
+                <div className="flex-1">
+                  <label className="text-[10px] mb-1 block" style={{ color: '#848E9C' }}>
+                    {t('oiRankingDuration')}
+                  </label>
+                  <select
+                    value={config.oi_ranking_duration || '1h'}
+                    onChange={(e) => !disabled && onChange({ ...config, oi_ranking_duration: e.target.value })}
+                    disabled={disabled}
+                    className="w-full px-2 py-1.5 rounded text-xs"
+                    style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
+                  >
+                    <option value="1h">{language === 'zh' ? '1小时' : '1 Hour'}</option>
+                    <option value="4h">{language === 'zh' ? '4小时' : '4 Hours'}</option>
+                    <option value="24h">{language === 'zh' ? '24小时' : '24 Hours'}</option>
+                  </select>
+                </div>
+                {/* Limit */}
+                <div className="flex-1">
+                  <label className="text-[10px] mb-1 block" style={{ color: '#848E9C' }}>
+                    {t('oiRankingLimit')}
+                  </label>
+                  <select
+                    value={config.oi_ranking_limit || 10}
+                    onChange={(e) => !disabled && onChange({ ...config, oi_ranking_limit: parseInt(e.target.value) })}
+                    disabled={disabled}
+                    className="w-full px-2 py-1.5 rounded text-xs"
+                    style={{ background: '#1E2329', border: '1px solid #2B3139', color: '#EAECEF' }}
+                  >
+                    {[5, 10, 15, 20].map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-[10px]" style={{ color: '#5E6673' }}>{t('oiRankingNote')}</p>
             </div>
           )}
         </div>

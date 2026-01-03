@@ -108,9 +108,9 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
     return (
       <div className={embedded ? 'p-6' : 'binance-card p-6'}>
         {!embedded && (
-        <h3 className="text-lg font-semibold mb-6" style={{ color: '#EAECEF' }}>
-          {t('accountEquityCurve', language)}
-        </h3>
+          <h3 className="text-lg font-semibold mb-6" style={{ color: '#EAECEF' }}>
+            {t('accountEquityCurve', language)}
+          </h3>
         )}
         <div className="text-center py-16" style={{ color: '#848E9C' }}>
           <div className="mb-4 flex justify-center opacity-50">
@@ -217,12 +217,12 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <div className="flex-1">
           {!embedded && (
-          <h3
-            className="text-base sm:text-lg font-bold mb-2"
-            style={{ color: '#EAECEF' }}
-          >
-            {t('accountEquityCurve', language)}
-          </h3>
+            <h3
+              className="text-base sm:text-lg font-bold mb-2"
+              style={{ color: '#EAECEF' }}
+            >
+              {t('accountEquityCurve', language)}
+            </h3>
           )}
           <div className="flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-4">
             <span
@@ -332,7 +332,7 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
             fontFamily: 'monospace',
           }}
         >
-          AIBTC
+          NOFX
         </div>
         <ResponsiveContainer width="100%" height={280}>
           <LineChart

@@ -25,15 +25,15 @@ export function CoinSourceEditor({
     const translations: Record<string, Record<string, string>> = {
       sourceType: { zh: '数据来源类型', en: 'Source Type' },
       static: { zh: '静态列表', en: 'Static List' },
-      coinpool: { zh: 'AI500 币种池', en: 'AI500 Coin Pool' },
+      coinpool: { zh: 'AI500 数据源', en: 'AI500 Data Provider' },
       oi_top: { zh: 'OI Top 持仓增长', en: 'OI Top' },
       mixed: { zh: '混合模式', en: 'Mixed Mode' },
       staticCoins: { zh: '自定义币种', en: 'Custom Coins' },
       addCoin: { zh: '添加币种', en: 'Add Coin' },
-      useCoinPool: { zh: '启用 AI500 币种池', en: 'Enable AI500 Coin Pool' },
-      coinPoolLimit: { zh: '币种池数量上限', en: 'Coin Pool Limit' },
+      useCoinPool: { zh: '启用 AI500 数据源', en: 'Enable AI500 Data Provider' },
+      coinPoolLimit: { zh: '数据源数量上限', en: 'Data Provider Limit' },
       coinPoolApiUrl: { zh: 'AI500 API URL', en: 'AI500 API URL' },
-      coinPoolApiUrlPlaceholder: { zh: '输入 AI500 币种池 API 地址...', en: 'Enter AI500 coin pool API URL...' },
+      coinPoolApiUrlPlaceholder: { zh: '输入 AI500 数据源 API 地址...', en: 'Enter AI500 data provider API URL...' },
       useOITop: { zh: '启用 OI Top 数据', en: 'Enable OI Top' },
       oiTopLimit: { zh: 'OI Top 数量上限', en: 'OI Top Limit' },
       oiTopApiUrl: { zh: 'OI Top API URL', en: 'OI Top API URL' },
@@ -65,10 +65,39 @@ export function CoinSourceEditor({
     { value: 'mixed', icon: Database, color: '#60a5fa' },
   ] as const
 
+  // xyz dex assets (stocks, forex, commodities) - should NOT get USDT suffix
+  const xyzDexAssets = new Set([
+    // Stocks
+    'TSLA', 'NVDA', 'AAPL', 'MSFT', 'META', 'AMZN', 'GOOGL', 'AMD', 'COIN', 'NFLX',
+    'PLTR', 'HOOD', 'INTC', 'MSTR', 'TSM', 'ORCL', 'MU', 'RIVN', 'COST', 'LLY',
+    'CRCL', 'SKHX', 'SNDK',
+    // Forex
+    'EUR', 'JPY',
+    // Commodities
+    'GOLD', 'SILVER',
+    // Index
+    'XYZ100',
+  ])
+
+  const isXyzDexAsset = (symbol: string): boolean => {
+    const base = symbol.toUpperCase().replace(/^XYZ:/, '').replace(/USDT$|USD$|-USDC$/, '')
+    return xyzDexAssets.has(base)
+  }
+
   const handleAddCoin = () => {
     if (!newCoin.trim()) return
     const symbol = newCoin.toUpperCase().trim()
-    const formattedSymbol = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`
+
+    // For xyz dex assets (stocks, forex, commodities), use xyz: prefix without USDT
+    let formattedSymbol: string
+    if (isXyzDexAsset(symbol)) {
+      // Remove xyz: prefix (case-insensitive) and any USD suffixes
+      const base = symbol.replace(/^xyz:/i, '').replace(/USDT$|USD$|-USDC$/i, '')
+      formattedSymbol = `xyz:${base}`
+    } else {
+      formattedSymbol = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`
+    }
+
     const currentCoins = config.static_coins || []
     if (!currentCoins.includes(formattedSymbol)) {
       onChange({
@@ -211,10 +240,10 @@ export function CoinSourceEditor({
                   </span>
                   <input
                     type="number"
-                    value={config.coin_pool_limit || 30}
+                    value={config.coin_pool_limit || 10}
                     onChange={(e) =>
                       !disabled &&
-                      onChange({ ...config, coin_pool_limit: parseInt(e.target.value) || 30 })
+                      onChange({ ...config, coin_pool_limit: parseInt(e.target.value) || 10 })
                     }
                     disabled={disabled}
                     min={1}
@@ -235,8 +264,8 @@ export function CoinSourceEditor({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm" style={{ color: '#848E9C' }}>
-                {t('coinPoolApiUrl')}
-              </label>
+                  {t('coinPoolApiUrl')}
+                </label>
                 {!disabled && !config.coin_pool_api_url && (
                   <button
                     type="button"
@@ -331,8 +360,8 @@ export function CoinSourceEditor({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm" style={{ color: '#848E9C' }}>
-                {t('oiTopApiUrl')}
-              </label>
+                  {t('oiTopApiUrl')}
+                </label>
                 {!disabled && !config.oi_top_api_url && (
                   <button
                     type="button"

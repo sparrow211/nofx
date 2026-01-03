@@ -1,20 +1,24 @@
 package main
 
 import (
+	"net/http"
+	_ "net/http/pprof"
 	"nofx/api"
 	"nofx/auth"
 	"nofx/backtest"
 	"nofx/config"
 	"nofx/crypto"
+	"nofx/experience"
 	"nofx/logger"
 	"nofx/manager"
-	"nofx/market"
 	"nofx/mcp"
 	"nofx/store"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
 
@@ -23,12 +27,10 @@ func main() {
 	_ = godotenv.Load()
 
 	// Initialize logger
-	//logger.Init(nil)
-	// Initialize logger (with Telegram support if configured)
-	logger.InitFromEnv()
+	logger.Init(nil)
 
 	logger.Info("╔════════════════════════════════════════════════════════════╗")
-	logger.Info("║    🤖 AI Multi-Model Trading System - DeepSeek & Qwen      ║")
+	logger.Info("║           🚀 NOFX - AI-Powered Trading System              ║")
 	logger.Info("╚════════════════════════════════════════════════════════════╝")
 
 	// Initialize global configuration (loaded from .env)
@@ -37,9 +39,16 @@ func main() {
 	logger.Info("✅ Configuration loaded")
 
 	// Initialize database
-	dbPath := "data.db"
+	// Default path is data/data.db to work with Docker volume mount (/app/data)
+	dbPath := "data/data.db"
 	if len(os.Args) > 1 {
 		dbPath = os.Args[1]
+	}
+	// Ensure data directory exists
+	if dir := filepath.Dir(dbPath); dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			logger.Errorf("Failed to create data directory: %v", err)
+		}
 	}
 
 	logger.Infof("📋 Initializing database: %s", dbPath)
@@ -49,6 +58,9 @@ func main() {
 	}
 	defer st.Close()
 	backtest.UseDatabase(st.DB())
+
+	// Initialize installation ID for experience improvement (anonymous statistics)
+	initInstallationID(st)
 
 	// Initialize encryption service
 	logger.Info("🔐 Initializing encryption service...")
@@ -88,6 +100,14 @@ func main() {
 	auth.SetJWTSecret(cfg.JWTSecret)
 	logger.Info("🔑 JWT secret configured")
 
+	// WebSocket market monitor is NO LONGER USED
+	// All K-line data now comes from CoinAnk API instead of Binance WebSocket cache
+	// Commented out to reduce unnecessary connections:
+	// go market.NewWSMonitor(150).Start(nil)
+	// logger.Info("📊 WebSocket market monitor started")
+	// time.Sleep(500 * time.Millisecond)
+	logger.Info("📊 Using CoinAnk API for all market data (WebSocket cache disabled)")
+
 	// Create TraderManager and BacktestManager
 	traderManager := manager.NewTraderManager()
 	mcpClient := newSharedMCPClient()
@@ -96,7 +116,7 @@ func main() {
 		logger.Warnf("⚠️ Failed to restore backtest history: %v", err)
 	}
 
-	// Load all traders from database to memory
+	// Load all traders from database to memory (may auto-start traders with IsRunning=true)
 	if err := traderManager.LoadTradersFromStore(st); err != nil {
 		logger.Fatalf("❌ Failed to load traders: %v", err)
 	}
@@ -121,9 +141,13 @@ func main() {
 		}
 	}
 
-	// Start WebSocket market monitor (get market data for all USDT perpetual contracts)
-	go market.NewWSMonitor(150).Start(nil)
-	logger.Info("📊 WebSocket market monitor started")
+	// Start pprof server for profiling (port 6060)
+	go func() {
+		logger.Info("📊 Starting pprof server on :6060")
+		if err := http.ListenAndServe(":6060", nil); err != nil {
+			logger.Warnf("⚠️ pprof server error: %v", err)
+		}
+	}()
 
 	// Start API server
 	server := api.NewServer(traderManager, st, cryptoService, backtestManager, cfg.APIServerPort)
@@ -138,7 +162,6 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	logger.Info("✅ System started successfully, waiting for trading commands...")
-	logger.Infof("📊 Telegram notification status: %s", logger.GetTelegramStatus())
 	logger.Info("📌 Tip: Use Ctrl+C to stop the system")
 
 	<-quit
@@ -146,10 +169,6 @@ func main() {
 
 	// Stop all traders
 	traderManager.StopAll()
-	
-	// Shutdown logger (gracefully close Telegram hook)
-	logger.Shutdown()
-	
 	logger.Info("✅ System shut down safely")
 }
 
@@ -161,4 +180,28 @@ func newSharedMCPClient() mcp.AIClient {
 		return nil
 	}
 	return mcp.NewDeepSeekClient()
+}
+
+// initInstallationID initializes the anonymous installation ID for experience improvement
+// This ID is persisted in database and used for anonymous usage statistics
+func initInstallationID(st *store.Store) {
+	const key = "installation_id"
+
+	// Try to load from database
+	installationID, err := st.GetSystemConfig(key)
+	if err != nil {
+		logger.Warnf("⚠️ Failed to load installation ID: %v", err)
+	}
+
+	// Generate new ID if not exists
+	if installationID == "" {
+		installationID = uuid.New().String()
+		if err := st.SetSystemConfig(key, installationID); err != nil {
+			logger.Warnf("⚠️ Failed to save installation ID: %v", err)
+		}
+		logger.Infof("📊 Generated new installation ID: %s", installationID[:8]+"...")
+	}
+
+	// Set installation ID in experience module
+	experience.SetInstallationID(installationID)
 }

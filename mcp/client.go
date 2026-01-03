@@ -31,7 +31,19 @@ var (
 		"stream error",   // HTTP/2 stream error
 		"INTERNAL_ERROR", // Server internal error
 	}
+
+	// TokenUsageCallback is called after each AI request with token usage info
+	TokenUsageCallback func(usage TokenUsage)
 )
+
+// TokenUsage represents token usage from AI API response
+type TokenUsage struct {
+	Provider         string
+	Model            string
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
 
 // Client AI API configuration
 type Client struct {
@@ -200,7 +212,12 @@ func (client *Client) buildMCPRequestBody(systemPrompt, userPrompt string) map[s
 		"model":       client.Model,
 		"messages":    messages,
 		"temperature": client.config.Temperature, // Use configured temperature
-		"max_tokens":  client.MaxTokens,
+	}
+	// OpenAI newer models use max_completion_tokens instead of max_tokens
+	if client.Provider == ProviderOpenAI {
+		requestBody["max_completion_tokens"] = client.MaxTokens
+	} else {
+		requestBody["max_tokens"] = client.MaxTokens
 	}
 	return requestBody
 }
@@ -221,6 +238,11 @@ func (client *Client) parseMCPResponse(body []byte) (string, error) {
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -229,6 +251,17 @@ func (client *Client) parseMCPResponse(body []byte) (string, error) {
 
 	if len(result.Choices) == 0 {
 		return "", fmt.Errorf("API returned empty response")
+	}
+
+	// Report token usage if callback is set
+	if TokenUsageCallback != nil && result.Usage.TotalTokens > 0 {
+		TokenUsageCallback(TokenUsage{
+			Provider:         client.Provider,
+			Model:            client.Model,
+			PromptTokens:     result.Usage.PromptTokens,
+			CompletionTokens: result.Usage.CompletionTokens,
+			TotalTokens:      result.Usage.TotalTokens,
+		})
 	}
 
 	return result.Choices[0].Message.Content, nil
@@ -469,11 +502,16 @@ func (client *Client) buildRequestBodyFromRequest(req *Request) map[string]any {
 		requestBody["temperature"] = client.config.Temperature
 	}
 
+	// OpenAI newer models use max_completion_tokens instead of max_tokens
+	tokenKey := "max_tokens"
+	if client.Provider == ProviderOpenAI {
+		tokenKey = "max_completion_tokens"
+	}
 	if req.MaxTokens != nil {
-		requestBody["max_tokens"] = *req.MaxTokens
+		requestBody[tokenKey] = *req.MaxTokens
 	} else {
 		// If not set in Request, use Client's MaxTokens
-		requestBody["max_tokens"] = client.MaxTokens
+		requestBody[tokenKey] = client.MaxTokens
 	}
 
 	if req.TopP != nil {

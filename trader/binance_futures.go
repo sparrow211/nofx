@@ -534,38 +534,64 @@ func (t *FuturesTrader) CloseShort(symbol string, quantity float64) (map[string]
 }
 
 // CancelStopLossOrders cancels only stop-loss orders (doesn't affect take-profit orders)
+// Now uses both legacy API and new Algo Order API
 func (t *FuturesTrader) CancelStopLossOrders(symbol string) error {
-	// Get all open orders for this symbol
+	canceledCount := 0
+	var cancelErrors []error
+
+	// 1. Cancel legacy stop-loss orders
 	orders, err := t.client.NewListOpenOrdersService().
 		Symbol(symbol).
 		Do(context.Background())
 
-	if err != nil {
-		return fmt.Errorf("failed to get open orders: %w", err)
+	if err == nil {
+		for _, order := range orders {
+			orderType := string(order.Type)
+
+			// Only cancel stop-loss orders (don't cancel take-profit orders)
+			// Use string comparison since OrderType constants were removed in v2.8.9
+			if orderType == "STOP_MARKET" || orderType == "STOP" {
+				_, err := t.client.NewCancelOrderService().
+					Symbol(symbol).
+					OrderID(order.OrderID).
+					Do(context.Background())
+
+				if err != nil {
+					errMsg := fmt.Sprintf("Order ID %d: %v", order.OrderID, err)
+					cancelErrors = append(cancelErrors, fmt.Errorf("%s", errMsg))
+					logger.Infof("  ⚠ Failed to cancel legacy stop-loss order: %s", errMsg)
+					continue
+				}
+
+				canceledCount++
+				logger.Infof("  ✓ Canceled legacy stop-loss order (Order ID: %d, Type: %s, Side: %s)", order.OrderID, orderType, order.PositionSide)
+			}
+		}
 	}
 
-	// Filter out stop-loss orders and cancel them (cancel all directions including LONG and SHORT)
-	canceledCount := 0
-	var cancelErrors []error
-	for _, order := range orders {
-		orderType := order.Type
+	// 2. Cancel Algo stop-loss orders
+	algoOrders, err := t.client.NewListOpenAlgoOrdersService().
+		Symbol(symbol).
+		Do(context.Background())
 
-		// Only cancel stop-loss orders (don't cancel take-profit orders)
-		if orderType == futures.OrderTypeStopMarket || orderType == futures.OrderTypeStop {
-			_, err := t.client.NewCancelOrderService().
-				Symbol(symbol).
-				OrderID(order.OrderID).
-				Do(context.Background())
+	if err == nil {
+		for _, algoOrder := range algoOrders {
+			// Only cancel stop-loss orders
+			if algoOrder.OrderType == futures.AlgoOrderTypeStopMarket || algoOrder.OrderType == futures.AlgoOrderTypeStop {
+				_, err := t.client.NewCancelAlgoOrderService().
+					AlgoID(algoOrder.AlgoId).
+					Do(context.Background())
 
-			if err != nil {
-				errMsg := fmt.Sprintf("Order ID %d: %v", order.OrderID, err)
-				cancelErrors = append(cancelErrors, fmt.Errorf("%s", errMsg))
-				logger.Infof("  ⚠ Failed to cancel stop-loss order: %s", errMsg)
-				continue
+				if err != nil {
+					errMsg := fmt.Sprintf("Algo ID %d: %v", algoOrder.AlgoId, err)
+					cancelErrors = append(cancelErrors, fmt.Errorf("%s", errMsg))
+					logger.Infof("  ⚠ Failed to cancel Algo stop-loss order: %s", errMsg)
+					continue
+				}
+
+				canceledCount++
+				logger.Infof("  ✓ Canceled Algo stop-loss order (Algo ID: %d, Type: %s)", algoOrder.AlgoId, algoOrder.OrderType)
 			}
-
-			canceledCount++
-			logger.Infof("  ✓ Canceled stop-loss order (Order ID: %d, Type: %s, Side: %s)", order.OrderID, orderType, order.PositionSide)
 		}
 	}
 
@@ -584,38 +610,64 @@ func (t *FuturesTrader) CancelStopLossOrders(symbol string) error {
 }
 
 // CancelTakeProfitOrders cancels only take-profit orders (doesn't affect stop-loss orders)
+// Now uses both legacy API and new Algo Order API
 func (t *FuturesTrader) CancelTakeProfitOrders(symbol string) error {
-	// Get all open orders for this symbol
+	canceledCount := 0
+	var cancelErrors []error
+
+	// 1. Cancel legacy take-profit orders
 	orders, err := t.client.NewListOpenOrdersService().
 		Symbol(symbol).
 		Do(context.Background())
 
-	if err != nil {
-		return fmt.Errorf("failed to get open orders: %w", err)
+	if err == nil {
+		for _, order := range orders {
+			orderType := string(order.Type)
+
+			// Only cancel take-profit orders (don't cancel stop-loss orders)
+			// Use string comparison since OrderType constants were removed in v2.8.9
+			if orderType == "TAKE_PROFIT_MARKET" || orderType == "TAKE_PROFIT" {
+				_, err := t.client.NewCancelOrderService().
+					Symbol(symbol).
+					OrderID(order.OrderID).
+					Do(context.Background())
+
+				if err != nil {
+					errMsg := fmt.Sprintf("Order ID %d: %v", order.OrderID, err)
+					cancelErrors = append(cancelErrors, fmt.Errorf("%s", errMsg))
+					logger.Infof("  ⚠ Failed to cancel legacy take-profit order: %s", errMsg)
+					continue
+				}
+
+				canceledCount++
+				logger.Infof("  ✓ Canceled legacy take-profit order (Order ID: %d, Type: %s, Side: %s)", order.OrderID, orderType, order.PositionSide)
+			}
+		}
 	}
 
-	// Filter out take-profit orders and cancel them (cancel all directions including LONG and SHORT)
-	canceledCount := 0
-	var cancelErrors []error
-	for _, order := range orders {
-		orderType := order.Type
+	// 2. Cancel Algo take-profit orders
+	algoOrders, err := t.client.NewListOpenAlgoOrdersService().
+		Symbol(symbol).
+		Do(context.Background())
 
-		// Only cancel take-profit orders (don't cancel stop-loss orders)
-		if orderType == futures.OrderTypeTakeProfitMarket || orderType == futures.OrderTypeTakeProfit {
-			_, err := t.client.NewCancelOrderService().
-				Symbol(symbol).
-				OrderID(order.OrderID).
-				Do(context.Background())
+	if err == nil {
+		for _, algoOrder := range algoOrders {
+			// Only cancel take-profit orders
+			if algoOrder.OrderType == futures.AlgoOrderTypeTakeProfitMarket || algoOrder.OrderType == futures.AlgoOrderTypeTakeProfit {
+				_, err := t.client.NewCancelAlgoOrderService().
+					AlgoID(algoOrder.AlgoId).
+					Do(context.Background())
 
-			if err != nil {
-				errMsg := fmt.Sprintf("Order ID %d: %v", order.OrderID, err)
-				cancelErrors = append(cancelErrors, fmt.Errorf("%s", errMsg))
-				logger.Infof("  ⚠ Failed to cancel take-profit order: %s", errMsg)
-				continue
+				if err != nil {
+					errMsg := fmt.Sprintf("Algo ID %d: %v", algoOrder.AlgoId, err)
+					cancelErrors = append(cancelErrors, fmt.Errorf("%s", errMsg))
+					logger.Infof("  ⚠ Failed to cancel Algo take-profit order: %s", errMsg)
+					continue
+				}
+
+				canceledCount++
+				logger.Infof("  ✓ Canceled Algo take-profit order (Algo ID: %d, Type: %s)", algoOrder.AlgoId, algoOrder.OrderType)
 			}
-
-			canceledCount++
-			logger.Infof("  ✓ Canceled take-profit order (Order ID: %d, Type: %s, Side: %s)", order.OrderID, orderType, order.PositionSide)
 		}
 	}
 
@@ -634,61 +686,91 @@ func (t *FuturesTrader) CancelTakeProfitOrders(symbol string) error {
 }
 
 // CancelAllOrders cancels all pending orders for this symbol
+// Now uses both legacy API and new Algo Order API
 func (t *FuturesTrader) CancelAllOrders(symbol string) error {
+	// 1. Cancel all legacy orders
 	err := t.client.NewCancelAllOpenOrdersService().
 		Symbol(symbol).
 		Do(context.Background())
 
 	if err != nil {
-		return fmt.Errorf("failed to cancel pending orders: %w", err)
+		logger.Infof("  ⚠ Failed to cancel legacy orders: %v", err)
+	} else {
+		logger.Infof("  ✓ Canceled all legacy pending orders for %s", symbol)
 	}
 
-	logger.Infof("  ✓ Canceled all pending orders for %s", symbol)
-	return nil
-}
-
-// CancelStopOrders cancels take-profit/stop-loss orders for this symbol (used to adjust TP/SL positions)
-func (t *FuturesTrader) CancelStopOrders(symbol string) error {
-	// Get all open orders for this symbol
-	orders, err := t.client.NewListOpenOrdersService().
+	// 2. Cancel all Algo orders
+	err = t.client.NewCancelAllAlgoOpenOrdersService().
 		Symbol(symbol).
 		Do(context.Background())
 
 	if err != nil {
-		return fmt.Errorf("failed to get open orders: %w", err)
+		// Ignore "no algo orders" error
+		if !contains(err.Error(), "no algo") && !contains(err.Error(), "No algo") {
+			logger.Infof("  ⚠ Failed to cancel Algo orders: %v", err)
+		}
+	} else {
+		logger.Infof("  ✓ Canceled all Algo orders for %s", symbol)
 	}
 
-	// Filter out take-profit and stop-loss orders and cancel them
+	return nil
+}
+
+// CancelStopOrders cancels take-profit/stop-loss orders for this symbol (used to adjust TP/SL positions)
+// Now uses both legacy API and new Algo Order API (Binance migrated stop orders to Algo system)
+func (t *FuturesTrader) CancelStopOrders(symbol string) error {
 	canceledCount := 0
-	for _, order := range orders {
-		orderType := order.Type
 
-		// Only cancel stop-loss and take-profit orders
-		if orderType == futures.OrderTypeStopMarket ||
-			orderType == futures.OrderTypeTakeProfitMarket ||
-			orderType == futures.OrderTypeStop ||
-			orderType == futures.OrderTypeTakeProfit {
+	// 1. Cancel legacy stop orders (for backward compatibility)
+	orders, err := t.client.NewListOpenOrdersService().
+		Symbol(symbol).
+		Do(context.Background())
 
-			_, err := t.client.NewCancelOrderService().
-				Symbol(symbol).
-				OrderID(order.OrderID).
-				Do(context.Background())
+	if err == nil {
+		for _, order := range orders {
+			orderType := string(order.Type)
 
-			if err != nil {
-				logger.Infof("  ⚠ Failed to cancel order %d: %v", order.OrderID, err)
-				continue
+			// Only cancel stop-loss and take-profit orders
+			// Use string comparison since OrderType constants were removed in v2.8.9
+			if orderType == "STOP_MARKET" ||
+				orderType == "TAKE_PROFIT_MARKET" ||
+				orderType == "STOP" ||
+				orderType == "TAKE_PROFIT" {
+
+				_, err := t.client.NewCancelOrderService().
+					Symbol(symbol).
+					OrderID(order.OrderID).
+					Do(context.Background())
+
+				if err != nil {
+					logger.Infof("  ⚠ Failed to cancel legacy order %d: %v", order.OrderID, err)
+					continue
+				}
+
+				canceledCount++
+				logger.Infof("  ✓ Canceled legacy stop order for %s (Order ID: %d, Type: %s)",
+					symbol, order.OrderID, orderType)
 			}
-
-			canceledCount++
-			logger.Infof("  ✓ Canceled take-profit/stop-loss order for %s (Order ID: %d, Type: %s)",
-				symbol, order.OrderID, orderType)
 		}
+	}
+
+	// 2. Cancel Algo orders (new API)
+	err = t.client.NewCancelAllAlgoOpenOrdersService().
+		Symbol(symbol).
+		Do(context.Background())
+
+	if err != nil {
+		// Ignore "no algo orders" error
+		if !contains(err.Error(), "no algo") && !contains(err.Error(), "No algo") {
+			logger.Infof("  ⚠ Failed to cancel Algo orders: %v", err)
+		}
+	} else {
+		logger.Infof("  ✓ Canceled all Algo orders for %s", symbol)
+		canceledCount++
 	}
 
 	if canceledCount == 0 {
 		logger.Infof("  ℹ %s has no take-profit/stop-loss orders to cancel", symbol)
-	} else {
-		logger.Infof("  ✓ Canceled %d take-profit/stop-loss order(s) for %s", canceledCount, symbol)
 	}
 
 	return nil
@@ -721,7 +803,8 @@ func (t *FuturesTrader) CalculatePositionSize(balance, riskPercent, price float6
 	return quantity
 }
 
-// SetStopLoss sets stop-loss order
+// SetStopLoss sets stop-loss order using new Algo Order API
+// Binance has migrated stop orders to Algo Order system (error -4120 STOP_ORDER_SWITCH_ALGO)
 func (t *FuturesTrader) SetStopLoss(symbol string, positionSide string, quantity, stopPrice float64) error {
 	var side futures.SideType
 	var posSide futures.PositionSideType
@@ -734,33 +817,28 @@ func (t *FuturesTrader) SetStopLoss(symbol string, positionSide string, quantity
 		posSide = futures.PositionSideTypeShort
 	}
 
-	// Format quantity
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
-	if err != nil {
-		return err
-	}
-
-	_, err = t.client.NewCreateOrderService().
+	// Use new Algo Order API
+	_, err := t.client.NewCreateAlgoOrderService().
 		Symbol(symbol).
 		Side(side).
 		PositionSide(posSide).
-		Type(futures.OrderTypeStopMarket).
-		StopPrice(fmt.Sprintf("%.8f", stopPrice)).
-		Quantity(quantityStr).
+		Type(futures.AlgoOrderTypeStopMarket).
+		TriggerPrice(fmt.Sprintf("%.8f", stopPrice)).
 		WorkingType(futures.WorkingTypeContractPrice).
 		ClosePosition(true).
-		NewClientOrderID(getBrOrderID()).
+		ClientAlgoId(getBrOrderID()).
 		Do(context.Background())
 
 	if err != nil {
 		return fmt.Errorf("failed to set stop-loss: %w", err)
 	}
 
-	logger.Infof("  Stop-loss price set: %.4f", stopPrice)
+	logger.Infof("  Stop-loss price set (Algo Order): %.4f", stopPrice)
 	return nil
 }
 
-// SetTakeProfit sets take-profit order
+// SetTakeProfit sets take-profit order using new Algo Order API
+// Binance has migrated stop orders to Algo Order system (error -4120 STOP_ORDER_SWITCH_ALGO)
 func (t *FuturesTrader) SetTakeProfit(symbol string, positionSide string, quantity, takeProfitPrice float64) error {
 	var side futures.SideType
 	var posSide futures.PositionSideType
@@ -773,29 +851,23 @@ func (t *FuturesTrader) SetTakeProfit(symbol string, positionSide string, quanti
 		posSide = futures.PositionSideTypeShort
 	}
 
-	// Format quantity
-	quantityStr, err := t.FormatQuantity(symbol, quantity)
-	if err != nil {
-		return err
-	}
-
-	_, err = t.client.NewCreateOrderService().
+	// Use new Algo Order API
+	_, err := t.client.NewCreateAlgoOrderService().
 		Symbol(symbol).
 		Side(side).
 		PositionSide(posSide).
-		Type(futures.OrderTypeTakeProfitMarket).
-		StopPrice(fmt.Sprintf("%.8f", takeProfitPrice)).
-		Quantity(quantityStr).
+		Type(futures.AlgoOrderTypeTakeProfitMarket).
+		TriggerPrice(fmt.Sprintf("%.8f", takeProfitPrice)).
 		WorkingType(futures.WorkingTypeContractPrice).
 		ClosePosition(true).
-		NewClientOrderID(getBrOrderID()).
+		ClientAlgoId(getBrOrderID()).
 		Do(context.Background())
 
 	if err != nil {
 		return fmt.Errorf("failed to set take-profit: %w", err)
 	}
 
-	logger.Infof("  Take-profit price set: %.4f", takeProfitPrice)
+	logger.Infof("  Take-profit price set (Algo Order): %.4f", takeProfitPrice)
 	return nil
 }
 
@@ -956,4 +1028,219 @@ func (t *FuturesTrader) GetOrderStatus(symbol string, orderID string) (map[strin
 	result["commission"] = 0.0
 
 	return result, nil
+}
+
+// GetClosedPnL retrieves recent closing trades from Binance Futures
+// Note: Binance does NOT have a position history API, only trade history.
+// This returns individual closing trades (realizedPnl != 0) for real-time position closure detection.
+// NOT suitable for historical position reconstruction - use only for matching recent closures.
+func (t *FuturesTrader) GetClosedPnL(startTime time.Time, limit int) ([]ClosedPnLRecord, error) {
+	trades, err := t.GetTrades(startTime, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter only closing trades (realizedPnl != 0) and convert to ClosedPnLRecord
+	var records []ClosedPnLRecord
+	for _, trade := range trades {
+		if trade.RealizedPnL == 0 {
+			continue // Skip opening trades
+		}
+
+		// Determine side from trade
+		side := "long"
+		if trade.PositionSide == "SHORT" || trade.PositionSide == "short" {
+			side = "short"
+		} else if trade.PositionSide == "BOTH" || trade.PositionSide == "" {
+			// One-way mode: selling closes long, buying closes short
+			if trade.Side == "SELL" || trade.Side == "Sell" {
+				side = "long"
+			} else {
+				side = "short"
+			}
+		}
+
+		// Calculate entry price from PnL (mathematically accurate for this trade)
+		var entryPrice float64
+		if trade.Quantity > 0 {
+			if side == "long" {
+				entryPrice = trade.Price - trade.RealizedPnL/trade.Quantity
+			} else {
+				entryPrice = trade.Price + trade.RealizedPnL/trade.Quantity
+			}
+		}
+
+		records = append(records, ClosedPnLRecord{
+			Symbol:      trade.Symbol,
+			Side:        side,
+			EntryPrice:  entryPrice,
+			ExitPrice:   trade.Price,
+			Quantity:    trade.Quantity,
+			RealizedPnL: trade.RealizedPnL,
+			Fee:         trade.Fee,
+			ExitTime:    trade.Time,
+			EntryTime:   trade.Time, // Approximate
+			OrderID:     trade.TradeID,
+			ExchangeID:  trade.TradeID,
+			CloseType:   "unknown",
+		})
+	}
+
+	return records, nil
+}
+
+// GetTrades retrieves trade history from Binance Futures using Income API
+// Note: Income API has delays (~minutes), for real-time use GetTradesForSymbol instead
+func (t *FuturesTrader) GetTrades(startTime time.Time, limit int) ([]TradeRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	// Use Income API to get REALIZED_PNL records (all symbols)
+	incomes, err := t.client.NewGetIncomeHistoryService().
+		IncomeType("REALIZED_PNL").
+		StartTime(startTime.UnixMilli()).
+		Limit(int64(limit)).
+		Do(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get income history: %w", err)
+	}
+
+	var trades []TradeRecord
+	for _, income := range incomes {
+		pnl, _ := strconv.ParseFloat(income.Income, 64)
+		if pnl == 0 {
+			continue // Skip zero PnL records
+		}
+
+		// Income API doesn't provide full trade details, create a minimal record
+		// This is mainly used for detecting recent closures, not historical reconstruction
+		trade := TradeRecord{
+			TradeID:     strconv.FormatInt(income.TranID, 10),
+			Symbol:      income.Symbol,
+			RealizedPnL: pnl,
+			Time:        time.UnixMilli(income.Time),
+			// Note: Income API doesn't provide price, quantity, side, fee
+			// For accurate data, use GetTradesForSymbol with specific symbol
+		}
+		trades = append(trades, trade)
+	}
+
+	return trades, nil
+}
+
+// GetTradesForSymbol retrieves trade history for a specific symbol
+// This is more reliable than using Income API which may have delays
+func (t *FuturesTrader) GetTradesForSymbol(symbol string, startTime time.Time, limit int) ([]TradeRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	accountTrades, err := t.client.NewListAccountTradeService().
+		Symbol(symbol).
+		StartTime(startTime.UnixMilli()).
+		Limit(limit).
+		Do(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trade history for %s: %w", symbol, err)
+	}
+
+	var trades []TradeRecord
+	for _, at := range accountTrades {
+		price, _ := strconv.ParseFloat(at.Price, 64)
+		qty, _ := strconv.ParseFloat(at.Quantity, 64)
+		fee, _ := strconv.ParseFloat(at.Commission, 64)
+		pnl, _ := strconv.ParseFloat(at.RealizedPnl, 64)
+
+		trade := TradeRecord{
+			TradeID:      strconv.FormatInt(at.ID, 10),
+			Symbol:       at.Symbol,
+			Side:         string(at.Side),
+			PositionSide: string(at.PositionSide),
+			Price:        price,
+			Quantity:     qty,
+			RealizedPnL:  pnl,
+			Fee:          fee,
+			Time:         time.UnixMilli(at.Time),
+		}
+		trades = append(trades, trade)
+	}
+
+	return trades, nil
+}
+
+// GetTradesForSymbolFromID retrieves trade history for a specific symbol starting from a given trade ID
+// This is used for incremental sync - only fetch new trades since last sync
+func (t *FuturesTrader) GetTradesForSymbolFromID(symbol string, fromID int64, limit int) ([]TradeRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	accountTrades, err := t.client.NewListAccountTradeService().
+		Symbol(symbol).
+		FromID(fromID).
+		Limit(limit).
+		Do(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trade history for %s from ID %d: %w", symbol, fromID, err)
+	}
+
+	var trades []TradeRecord
+	for _, at := range accountTrades {
+		price, _ := strconv.ParseFloat(at.Price, 64)
+		qty, _ := strconv.ParseFloat(at.Quantity, 64)
+		fee, _ := strconv.ParseFloat(at.Commission, 64)
+		pnl, _ := strconv.ParseFloat(at.RealizedPnl, 64)
+
+		trade := TradeRecord{
+			TradeID:      strconv.FormatInt(at.ID, 10),
+			Symbol:       at.Symbol,
+			Side:         string(at.Side),
+			PositionSide: string(at.PositionSide),
+			Price:        price,
+			Quantity:     qty,
+			RealizedPnL:  pnl,
+			Fee:          fee,
+			Time:         time.UnixMilli(at.Time),
+		}
+		trades = append(trades, trade)
+	}
+
+	return trades, nil
+}
+
+// GetCommissionSymbols returns symbols that have new commission records since lastSyncTime
+// COMMISSION income is generated for every trade, so this is more reliable than REALIZED_PNL
+func (t *FuturesTrader) GetCommissionSymbols(lastSyncTime time.Time) ([]string, error) {
+	incomes, err := t.client.NewGetIncomeHistoryService().
+		IncomeType("COMMISSION").
+		StartTime(lastSyncTime.UnixMilli()).
+		Limit(1000).
+		Do(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commission history: %w", err)
+	}
+
+	symbolMap := make(map[string]bool)
+	for _, income := range incomes {
+		if income.Symbol != "" {
+			symbolMap[income.Symbol] = true
+		}
+	}
+
+	var symbols []string
+	for symbol := range symbolMap {
+		symbols = append(symbols, symbol)
+	}
+
+	return symbols, nil
 }

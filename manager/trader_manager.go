@@ -3,6 +3,8 @@ package manager
 import (
 	"context"
 	"fmt"
+	"nofx/debate"
+	"nofx/decision"
 	"nofx/logger"
 	"nofx/store"
 	"nofx/trader"
@@ -10,6 +12,27 @@ import (
 	"sync"
 	"time"
 )
+
+// TraderExecutorAdapter wraps AutoTrader to implement debate.TraderExecutor
+type TraderExecutorAdapter struct {
+	autoTrader *trader.AutoTrader
+}
+
+// ExecuteDecision executes a trading decision
+func (a *TraderExecutorAdapter) ExecuteDecision(d *decision.Decision) error {
+	return a.autoTrader.ExecuteDecision(d)
+}
+
+// GetBalance returns account balance
+func (a *TraderExecutorAdapter) GetBalance() (map[string]interface{}, error) {
+	info, err := a.autoTrader.GetAccountInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account info: %w", err)
+	}
+	// Log the balance for debugging
+	logger.Infof("[Debate] GetBalance for trader, result: %+v", info)
+	return info, nil
+}
 
 // CompetitionCache competition data cache
 type CompetitionCache struct {
@@ -21,6 +44,7 @@ type CompetitionCache struct {
 // TraderManager manages multiple trader instances
 type TraderManager struct {
 	traders          map[string]*trader.AutoTrader // key: trader ID
+	loadErrors       map[string]error              // key: trader ID, stores last load error
 	competitionCache *CompetitionCache
 	mu               sync.RWMutex
 }
@@ -28,11 +52,19 @@ type TraderManager struct {
 // NewTraderManager creates a trader manager
 func NewTraderManager() *TraderManager {
 	return &TraderManager{
-		traders: make(map[string]*trader.AutoTrader),
+		traders:    make(map[string]*trader.AutoTrader),
+		loadErrors: make(map[string]error),
 		competitionCache: &CompetitionCache{
 			data: make(map[string]interface{}),
 		},
 	}
+}
+
+// GetLoadError returns the last load error for a trader
+func (tm *TraderManager) GetLoadError(traderID string) error {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.loadErrors[traderID]
 }
 
 // GetTrader retrieves a trader by ID
@@ -196,11 +228,15 @@ func (tm *TraderManager) GetCompetitionData() (map[string]interface{}, error) {
 
 	tm.mu.RLock()
 
-	// Get all trader list
+	// Get all trader list (only those with ShowInCompetition = true)
 	allTraders := make([]*trader.AutoTrader, 0, len(tm.traders))
 	for id, t := range tm.traders {
-		allTraders = append(allTraders, t)
-		logger.Infof("📋 Competition data includes trader: %s (%s)", t.GetName(), id)
+		if t.GetShowInCompetition() {
+			allTraders = append(allTraders, t)
+			logger.Infof("📋 Competition data includes trader: %s (%s)", t.GetName(), id)
+		} else {
+			logger.Infof("📋 Competition data excludes trader (hidden): %s (%s)", t.GetName(), id)
+		}
 	}
 	tm.mu.RUnlock()
 
@@ -414,7 +450,7 @@ func (tm *TraderManager) LoadUserTradersFromStore(st *store.Store, userID string
 	for _, traderCfg := range traders {
 		// Check if this trader is already loaded
 		if _, exists := tm.traders[traderCfg.ID]; exists {
-			logger.Infof("⚠️ Trader %s already loaded, skipping", traderCfg.Name)
+			// Trader already loaded - this is normal, no need to log
 			continue
 		}
 
@@ -465,10 +501,15 @@ func (tm *TraderManager) LoadUserTradersFromStore(st *store.Store, userID string
 		}
 
 		// Use existing method to load trader
-		logger.Infof("📦 Loading trader %s (AI Model: %s, Exchange: %s, Strategy ID: %s)", traderCfg.Name, aiModelCfg.Provider, exchangeCfg.ID, traderCfg.StrategyID)
+		logger.Infof("📦 Loading trader %s (AI Model: %s, Exchange: %s/%s, Strategy ID: %s)", traderCfg.Name, aiModelCfg.Provider, exchangeCfg.ExchangeType, exchangeCfg.AccountName, traderCfg.StrategyID)
 		err = tm.addTraderFromStore(traderCfg, aiModelCfg, exchangeCfg, st)
 		if err != nil {
 			logger.Infof("❌ Failed to load trader %s: %v", traderCfg.Name, err)
+			// Save error for later retrieval
+			tm.loadErrors[traderCfg.ID] = err
+		} else {
+			// Clear any previous error on success
+			delete(tm.loadErrors, traderCfg.ID)
 		}
 	}
 
@@ -605,7 +646,8 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		ID:                    traderCfg.ID,
 		Name:                  traderCfg.Name,
 		AIModel:               aiModelCfg.Provider,
-		Exchange:              exchangeCfg.ID,
+		Exchange:              exchangeCfg.ExchangeType, // Exchange type: binance/bybit/okx/etc
+		ExchangeID:            exchangeCfg.ID,           // Exchange account UUID (for multi-account)
 		BinanceAPIKey:         "",
 		BinanceSecretKey:      "",
 		HyperliquidPrivateKey: "",
@@ -615,14 +657,15 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		QwenKey:               "",
 		CustomAPIURL:          aiModelCfg.CustomAPIURL,
 		CustomModelName:       aiModelCfg.CustomModelName,
-		ScanInterval:    time.Duration(traderCfg.ScanIntervalMinutes) * time.Minute,
-		InitialBalance:  traderCfg.InitialBalance,
-		IsCrossMargin:   traderCfg.IsCrossMargin,
-		StrategyConfig:        strategyConfig,
+		ScanInterval:         time.Duration(traderCfg.ScanIntervalMinutes) * time.Minute,
+		InitialBalance:       traderCfg.InitialBalance,
+		IsCrossMargin:        traderCfg.IsCrossMargin,
+		ShowInCompetition:    traderCfg.ShowInCompetition,
+		StrategyConfig:       strategyConfig,
 	}
 
 	// Set API keys based on exchange type
-	switch exchangeCfg.ID {
+	switch exchangeCfg.ExchangeType {
 	case "binance":
 		traderConfig.BinanceAPIKey = exchangeCfg.APIKey
 		traderConfig.BinanceSecretKey = exchangeCfg.SecretKey
@@ -633,6 +676,10 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		traderConfig.OKXAPIKey = exchangeCfg.APIKey
 		traderConfig.OKXSecretKey = exchangeCfg.SecretKey
 		traderConfig.OKXPassphrase = exchangeCfg.Passphrase
+	case "bitget":
+		traderConfig.BitgetAPIKey = exchangeCfg.APIKey
+		traderConfig.BitgetSecretKey = exchangeCfg.SecretKey
+		traderConfig.BitgetPassphrase = exchangeCfg.Passphrase
 	case "hyperliquid":
 		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey
 		traderConfig.HyperliquidWalletAddr = exchangeCfg.HyperliquidWalletAddr
@@ -643,14 +690,20 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 	case "lighter":
 		traderConfig.LighterPrivateKey = exchangeCfg.LighterPrivateKey
 		traderConfig.LighterWalletAddr = exchangeCfg.LighterWalletAddr
+		traderConfig.LighterAPIKeyPrivateKey = exchangeCfg.LighterAPIKeyPrivateKey
+		traderConfig.LighterAPIKeyIndex = exchangeCfg.LighterAPIKeyIndex
 		traderConfig.LighterTestnet = exchangeCfg.Testnet
 	}
 
 	// Set API keys based on AI model
-	if aiModelCfg.Provider == "qwen" {
+	switch aiModelCfg.Provider {
+	case "qwen":
 		traderConfig.QwenKey = aiModelCfg.APIKey
-	} else if aiModelCfg.Provider == "deepseek" {
+	case "deepseek":
 		traderConfig.DeepSeekKey = aiModelCfg.APIKey
+	default:
+		// For other providers (grok, openai, claude, gemini, kimi, etc.), use CustomAPIKey
+		traderConfig.CustomAPIKey = aiModelCfg.APIKey
 	}
 
 	// Create trader instance
@@ -671,7 +724,7 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 	}
 
 	tm.traders[traderCfg.ID] = at
-	logger.Infof("✓ Trader '%s' (%s + %s) loaded to memory", traderCfg.Name, aiModelCfg.Provider, exchangeCfg.ID)
+	logger.Infof("✓ Trader '%s' (%s + %s/%s) loaded to memory", traderCfg.Name, aiModelCfg.Provider, exchangeCfg.ExchangeType, exchangeCfg.AccountName)
 
 	// Auto-start if trader was running before shutdown
 	if traderCfg.IsRunning {
@@ -689,4 +742,14 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 	}
 
 	return nil
+}
+
+// GetTraderExecutor returns a TraderExecutor for the given trader ID
+// This is used by the debate module to execute consensus trades
+func (tm *TraderManager) GetTraderExecutor(traderID string) (debate.TraderExecutor, error) {
+	at, err := tm.GetTrader(traderID)
+	if err != nil {
+		return nil, err
+	}
+	return &TraderExecutorAdapter{autoTrader: at}, nil
 }

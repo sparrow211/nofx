@@ -46,11 +46,14 @@ export interface DecisionAction {
   quantity: number
   leverage: number
   price: number
+  stop_loss?: number      // Stop loss price
+  take_profit?: number    // Take profit price
+  confidence?: number     // AI confidence (0-100)
+  reasoning?: string      // Brief reasoning
   order_id: number
   timestamp: string
   success: boolean
   error?: string
-  reasoning?: string
 }
 
 export interface AccountSnapshot {
@@ -64,6 +67,7 @@ export interface AccountSnapshot {
 export interface DecisionRecord {
   timestamp: string
   cycle_number: number
+  system_prompt: string
   input_prompt: string
   cot_trace: string
   decision_json: string
@@ -91,6 +95,9 @@ export interface TraderInfo {
   ai_model: string
   exchange_id?: string
   is_running?: boolean
+  show_in_competition?: boolean
+  strategy_id?: string
+  strategy_name?: string
   custom_prompt?: string
   use_coin_pool?: boolean
   use_oi_top?: boolean
@@ -108,24 +115,45 @@ export interface AIModel {
 }
 
 export interface Exchange {
-  id: string
-  name: string
+  id: string                     // UUID (empty for supported exchange templates)
+  exchange_type: string          // "binance", "bybit", "okx", "hyperliquid", "aster", "lighter"
+  account_name: string           // User-defined account name
+  name: string                   // Display name
   type: 'cex' | 'dex'
   enabled: boolean
   apiKey?: string
   secretKey?: string
-  passphrase?: string // OKX 特定字段
+  passphrase?: string            // OKX specific
   testnet?: boolean
-  // Hyperliquid 特定字段
+  // Hyperliquid specific
   hyperliquidWalletAddr?: string
-  // Aster 特定字段
+  // Aster specific
   asterUser?: string
   asterSigner?: string
   asterPrivateKey?: string
-  // LIGHTER 特定字段
+  // LIGHTER specific
   lighterWalletAddr?: string
   lighterPrivateKey?: string
   lighterApiKeyPrivateKey?: string
+  lighterApiKeyIndex?: number
+}
+
+export interface CreateExchangeRequest {
+  exchange_type: string          // "binance", "bybit", "okx", "hyperliquid", "aster", "lighter"
+  account_name: string           // User-defined account name
+  enabled: boolean
+  api_key?: string
+  secret_key?: string
+  passphrase?: string
+  testnet?: boolean
+  hyperliquid_wallet_addr?: string
+  aster_user?: string
+  aster_signer?: string
+  aster_private_key?: string
+  lighter_wallet_addr?: string
+  lighter_private_key?: string
+  lighter_api_key_private_key?: string
+  lighter_api_key_index?: number
 }
 
 export interface CreateTraderRequest {
@@ -136,6 +164,7 @@ export interface CreateTraderRequest {
   initial_balance?: number // 可选：创建时由后端自动获取，编辑时可手动更新
   scan_interval_minutes?: number
   is_cross_margin?: boolean
+  show_in_competition?: boolean // 是否在竞技场显示
   // 以下字段为向后兼容保留，新版使用策略配置
   btc_eth_leverage?: number
   altcoin_leverage?: number
@@ -176,6 +205,7 @@ export interface UpdateExchangeConfigRequest {
       lighter_wallet_addr?: string
       lighter_private_key?: string
       lighter_api_key_private_key?: string
+      lighter_api_key_index?: number
     }
   }
 }
@@ -205,20 +235,22 @@ export interface TraderConfigData {
   trader_name: string
   ai_model: string
   exchange_id: string
-  strategy_id?: string  // 策略ID（新版）
+  strategy_id?: string  // 策略ID
+  strategy_name?: string  // 策略名称
   is_cross_margin: boolean
+  show_in_competition: boolean  // 是否在竞技场显示
   scan_interval_minutes: number
   initial_balance: number
   is_running: boolean
   // 以下为旧版字段（向后兼容）
-  btc_eth_leverage: number
-  altcoin_leverage: number
-  trading_symbols: string
-  custom_prompt: string
-  override_base_prompt: boolean
-  system_prompt_template: string
-  use_coin_pool: boolean
-  use_oi_top: boolean
+  btc_eth_leverage?: number
+  altcoin_leverage?: number
+  trading_symbols?: string
+  custom_prompt?: string
+  override_base_prompt?: boolean
+  system_prompt_template?: string
+  use_coin_pool?: boolean
+  use_oi_top?: boolean
 }
 
 // Backtest types
@@ -250,6 +282,19 @@ export interface BacktestRunsResponse {
   items: BacktestRunMetadata[];
 }
 
+// Position status for real-time display during backtest
+export interface BacktestPositionStatus {
+  symbol: string;
+  side: string;
+  quantity: number;
+  entry_price: number;
+  mark_price: number;
+  leverage: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  margin_used: number;
+}
+
 export interface BacktestStatusPayload {
   run_id: string;
   state: string;
@@ -260,6 +305,7 @@ export interface BacktestStatusPayload {
   equity: number;
   unrealized_pnl: number;
   realized_pnl: number;
+  positions?: BacktestPositionStatus[];
   note?: string;
   last_error?: string;
   last_updated_iso: string;
@@ -321,6 +367,7 @@ export interface BacktestMetrics {
 export interface BacktestStartConfig {
   run_id?: string;
   ai_model_id?: string;
+  strategy_id?: string; // Optional: use saved strategy from Strategy Studio
   symbols: string[];
   timeframes: string[];
   decision_timeframe: string;
@@ -352,6 +399,26 @@ export interface BacktestStartConfig {
     btc_eth_leverage?: number;
     altcoin_leverage?: number;
   };
+}
+
+// Kline data for backtest chart
+export interface BacktestKline {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface BacktestKlinesResponse {
+  symbol: string;
+  timeframe: string;
+  start_ts: number;
+  end_ts: number;
+  count: number;
+  klines: BacktestKline[];
+  run_id: string;
 }
 
 // Strategy Studio Types
@@ -401,16 +468,25 @@ export interface IndicatorConfig {
   enable_macd: boolean;
   enable_rsi: boolean;
   enable_atr: boolean;
+  enable_boll: boolean;
   enable_volume: boolean;
   enable_oi: boolean;
   enable_funding_rate: boolean;
   ema_periods?: number[];
   rsi_periods?: number[];
   atr_periods?: number[];
+  boll_periods?: number[];
   external_data_sources?: ExternalDataSource[];
   // 量化数据源（资金流向、持仓变化、价格变化）
   enable_quant_data?: boolean;
   quant_data_api_url?: string;
+  enable_quant_oi?: boolean;
+  enable_quant_netflow?: boolean;
+  // OI 排行数据（市场持仓量增减排行）
+  enable_oi_ranking?: boolean;
+  oi_ranking_api_url?: string;
+  oi_ranking_duration?: string;  // "1h", "4h", "24h"
+  oi_ranking_limit?: number;
 }
 
 export interface KlineConfig {
@@ -434,12 +510,205 @@ export interface ExternalDataSource {
 }
 
 export interface RiskControlConfig {
+  // Max number of coins held simultaneously (CODE ENFORCED)
   max_positions: number;
-  btc_eth_max_leverage: number;
-  altcoin_max_leverage: number;
-  min_risk_reward_ratio: number;
-  max_margin_usage: number;
-  max_position_ratio: number;
-  min_position_size: number;
-  min_confidence: number;
+
+  // Trading Leverage - exchange leverage for opening positions (AI guided)
+  btc_eth_max_leverage: number;    // BTC/ETH max exchange leverage
+  altcoin_max_leverage: number;    // Altcoin max exchange leverage
+
+  // Position Value Ratio - single position notional value / account equity (CODE ENFORCED)
+  // Max position value = equity × this ratio
+  btc_eth_max_position_value_ratio?: number;     // default: 5 (BTC/ETH max position = 5x equity)
+  altcoin_max_position_value_ratio?: number;     // default: 1 (Altcoin max position = 1x equity)
+
+  // Risk Parameters
+  max_margin_usage: number;        // Max margin utilization, e.g. 0.9 = 90% (CODE ENFORCED)
+  min_position_size: number;       // Min position size in USDT (CODE ENFORCED)
+  min_risk_reward_ratio: number;   // Min take_profit / stop_loss ratio (AI guided)
+  min_confidence: number;          // Min AI confidence to open position (AI guided)
+}
+
+// Debate Arena Types
+export type DebateStatus = 'pending' | 'running' | 'voting' | 'completed' | 'cancelled';
+export type DebatePersonality = 'bull' | 'bear' | 'analyst' | 'contrarian' | 'risk_manager';
+
+export interface DebateDecision {
+  action: string;
+  symbol: string;
+  confidence: number;
+  leverage?: number;
+  position_pct?: number;
+  position_size_usd?: number;
+  stop_loss?: number;
+  take_profit?: number;
+  reasoning: string;
+  // Execution tracking
+  executed?: boolean;
+  executed_at?: string;
+  order_id?: string;
+  error?: string;
+}
+
+export interface DebateSession {
+  id: string;
+  user_id: string;
+  name: string;
+  strategy_id: string;
+  status: DebateStatus;
+  symbol: string;
+  interval_minutes: number;
+  prompt_variant: string;
+  trader_id?: string;
+  max_rounds: number;
+  current_round: number;
+  final_decision?: DebateDecision;
+  final_decisions?: DebateDecision[];  // Multi-coin decisions
+  auto_execute: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DebateParticipant {
+  id: string;
+  session_id: string;
+  ai_model_id: string;
+  ai_model_name: string;
+  provider: string;
+  personality: DebatePersonality;
+  color: string;
+  speak_order: number;
+  created_at: string;
+}
+
+export interface DebateMessage {
+  id: string;
+  session_id: string;
+  round: number;
+  ai_model_id: string;
+  ai_model_name: string;
+  provider: string;
+  personality: DebatePersonality;
+  message_type: string;
+  content: string;
+  decision?: DebateDecision;
+  decisions?: DebateDecision[];  // Multi-coin decisions
+  confidence: number;
+  created_at: string;
+}
+
+export interface DebateVote {
+  id: string;
+  session_id: string;
+  ai_model_id: string;
+  ai_model_name: string;
+  action: string;
+  symbol: string;
+  confidence: number;
+  leverage?: number;
+  position_pct?: number;
+  stop_loss_pct?: number;
+  take_profit_pct?: number;
+  reasoning: string;
+  created_at: string;
+}
+
+export interface DebateSessionWithDetails extends DebateSession {
+  participants: DebateParticipant[];
+  messages: DebateMessage[];
+  votes: DebateVote[];
+}
+
+export interface CreateDebateRequest {
+  name: string;
+  strategy_id: string;
+  symbol: string;
+  max_rounds?: number;
+  interval_minutes?: number;  // 5, 15, 30, 60 minutes
+  prompt_variant?: string;    // balanced, aggressive, conservative, scalping
+  auto_execute?: boolean;
+  trader_id?: string;         // Trader to use for auto-execute
+  // OI Ranking data options
+  enable_oi_ranking?: boolean;  // Whether to include OI ranking data
+  oi_ranking_limit?: number;    // Number of OI ranking entries (default 10)
+  oi_duration?: string;         // Duration for OI data (1h, 4h, 24h, etc.)
+  participants: {
+    ai_model_id: string;
+    personality: DebatePersonality;
+  }[];
+}
+
+export interface DebatePersonalityInfo {
+  id: DebatePersonality;
+  name: string;
+  emoji: string;
+  color: string;
+  description: string;
+}
+
+// Position History Types
+export interface HistoricalPosition {
+  id: number;
+  trader_id: string;
+  exchange_id: string;
+  exchange_type: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  entry_quantity: number;
+  entry_price: number;
+  entry_order_id: string;
+  entry_time: string;
+  exit_price: number;
+  exit_order_id: string;
+  exit_time: string;
+  realized_pnl: number;
+  fee: number;
+  leverage: number;
+  status: string;
+  close_reason: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Matches Go TraderStats struct exactly
+export interface TraderStats {
+  total_trades: number;
+  win_trades: number;
+  loss_trades: number;
+  win_rate: number;
+  profit_factor: number;
+  sharpe_ratio: number;
+  total_pnl: number;
+  total_fee: number;
+  avg_win: number;
+  avg_loss: number;
+  max_drawdown_pct: number;
+}
+
+// Matches Go SymbolStats struct exactly
+export interface SymbolStats {
+  symbol: string;
+  total_trades: number;
+  win_trades: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_pnl: number;
+  avg_hold_mins: number;
+}
+
+// Matches Go DirectionStats struct exactly
+export interface DirectionStats {
+  side: string;
+  trade_count: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_pnl: number;
+}
+
+export interface PositionHistoryResponse {
+  positions: HistoricalPosition[];
+  stats: TraderStats | null;
+  symbol_stats: SymbolStats[];
+  direction_stats: DirectionStats[];
 }

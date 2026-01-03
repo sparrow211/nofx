@@ -113,13 +113,13 @@ set_env_var() {
         # macOS 和 Linux 兼容的 sed
         if [[ "$OSTYPE" == "darwin"* ]]; then
             sed -i '' "s|^${var_name}=.*|${var_name}=${var_value}|" .env
-            else
-            sed -i "s|^${var_name}=.*|${var_name}=${var_value}|" .env
-            fi
         else
+            sed -i "s|^${var_name}=.*|${var_name}=${var_value}|" .env
+        fi
+    else
         # 变量不存在，追加
         echo "${var_name}=${var_value}" >> .env
-        fi
+    fi
 }
 
 # ------------------------------------------------------------------------
@@ -137,7 +137,7 @@ check_encryption() {
         set_env_var "JWT_SECRET" "$jwt_secret"
         print_success "JWT_SECRET 已生成"
         generated=true
-            fi
+    fi
 
     # 检查并生成 DATA_ENCRYPTION_KEY
     if ! is_env_configured "DATA_ENCRYPTION_KEY"; then
@@ -146,7 +146,7 @@ check_encryption() {
         set_env_var "DATA_ENCRYPTION_KEY" "$data_key"
         print_success "DATA_ENCRYPTION_KEY 已生成"
         generated=true
-        fi
+    fi
 
     # 检查并生成 RSA_PRIVATE_KEY
     if ! is_env_configured "RSA_PRIVATE_KEY"; then
@@ -156,14 +156,14 @@ check_encryption() {
         set_env_var "RSA_PRIVATE_KEY" "\"$rsa_key\""
         print_success "RSA_PRIVATE_KEY 已生成"
         generated=true
-            fi
+    fi
 
     if [ "$generated" = true ]; then
         echo ""
         print_success "所有缺失的密钥已自动生成并保存到 .env"
         print_warning "请妥善保管 .env 文件，不要提交到版本控制系统"
         echo ""
-        fi
+    fi
 
     print_success "加密密钥检查完成"
     print_info "  • JWT_SECRET: OK"
@@ -172,68 +172,6 @@ check_encryption() {
 
     # 修复 .env 文件权限
     chmod 600 .env 2>/dev/null || true
-}
-
-# ------------------------------------------------------------------------
-# Validation: Telegram Configuration (Optional)
-# ------------------------------------------------------------------------
-check_telegram() {
-    print_info "检查 Telegram 通知配置..."
-    
-    local telegram_enabled=$(grep "^TELEGRAM_ENABLED=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d ' ')
-    
-    if [ "$telegram_enabled" != "true" ]; then
-        print_info "  Telegram 通知未启用 (可选功能)"
-        return 0
-    fi
-    
-    # 检查必要配置
-    local has_error=false
-    
-    if ! is_env_configured "TELEGRAM_BOT_TOKEN"; then
-        print_warning "  ⚠️  TELEGRAM_BOT_TOKEN 未配置"
-        has_error=true
-    else
-        print_success "  • TELEGRAM_BOT_TOKEN: OK"
-    fi
-    
-    if ! is_env_configured "TELEGRAM_CHAT_ID"; then
-        print_warning "  ⚠️  TELEGRAM_CHAT_ID 未配置"
-        has_error=true
-    else
-        print_success "  • TELEGRAM_CHAT_ID: OK"
-    fi
-    
-    local min_level=$(grep "^TELEGRAM_MIN_LEVEL=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d ' ')
-    if [ -z "$min_level" ]; then
-        print_info "  • TELEGRAM_MIN_LEVEL: 使用默认值 (error)"
-    else
-        print_success "  • TELEGRAM_MIN_LEVEL: $min_level"
-    fi
-    
-    if [ "$has_error" = true ]; then
-        echo ""
-        print_warning "Telegram 通知配置不完整，将无法使用该功能"
-        print_info "完整配置方法："
-        print_info "  1. 联系 @BotFather 创建 Bot 并获取 Token"
-        print_info "  2. 联系 @userinfobot 获取你的 Chat ID"
-        print_info "  3. 在 .env 中设置 TELEGRAM_BOT_TOKEN 和 TELEGRAM_CHAT_ID"
-        echo ""
-    else
-        print_success "Telegram 通知配置完整"
-    fi
-}
-
-# ------------------------------------------------------------------------
-# Validation: Configuration File (config.json) - BASIC SETTINGS ONLY
-# ------------------------------------------------------------------------
-check_config() {
-    if [ ! -f "config.json" ]; then
-        print_warning "config.json 不存在，从模板复制..."
-        cp config.json.example config.json
-        print_info "已使用默认配置创建 config.json"
-    fi
-    print_success "配置文件存在"
 }
 
 # ------------------------------------------------------------------------
@@ -256,20 +194,16 @@ read_env_vars() {
 }
 
 # ------------------------------------------------------------------------
-# Validation: Database File (data.db)
+# Validation: Database Directory (data/)
 # ------------------------------------------------------------------------
 check_database() {
-    if [ -d "data.db" ]; then
-        print_warning "data.db 是目录而非文件，正在删除目录..."
-        rm -rf data.db
-        install -m 600 /dev/null data.db
-        print_success "已创建空数据库文件"
-    elif [ ! -f "data.db" ]; then
-        print_warning "数据库文件不存在，创建空数据库文件..."
-        install -m 600 /dev/null data.db
-        print_info "已创建空数据库文件，系统将在启动时初始化"
+    # Ensure data directory exists
+    if [ ! -d "data" ]; then
+        print_warning "数据目录不存在，创建 data/ 目录..."
+        install -m 700 -d data
+        print_success "已创建 data/ 目录"
     else
-        print_success "数据库文件存在"
+        print_success "数据目录存在"
     fi
 }
 
@@ -281,13 +215,9 @@ start() {
 
     read_env_vars
 
-    if [ ! -f "data.db" ]; then
-        print_info "创建数据库文件..."
-        install -m 600 /dev/null data.db
-    fi
-    if [ ! -d "decision_logs" ]; then
-        print_info "创建日志目录..."
-        install -m 700 -d decision_logs
+    if [ ! -d "data" ]; then
+        print_info "创建数据目录..."
+        install -m 700 -d data
     fi
 
     if [ "$1" == "--build" ]; then
@@ -429,7 +359,6 @@ show_help() {
     echo "  clean              清理所有容器和数据"
     echo "  update             更新代码并重启"
     echo "  regenerate-keys    重新生成所有加密密钥（慎用）"
-    echo "  test-telegram      测试 Telegram 通知配置"
     echo "  help               显示此帮助信息"
     echo ""
     echo "示例:"
@@ -451,8 +380,6 @@ main() {
         start)
             check_env
             check_encryption
-            check_telegram
-            check_config
             check_database
             start "$2"
             ;;
@@ -476,17 +403,6 @@ main() {
             ;;
         regenerate-keys)
             regenerate_keys
-            ;;
-        test-telegram)
-            check_env
-            print_info "运行 Telegram 配置测试..."
-            if command -v go &> /dev/null; then
-                go run test_telegram_status.go
-            else
-                print_error "Go 未安装，无法运行测试"
-                print_info "请手动运行: go run test_telegram_status.go"
-                exit 1
-            fi
             ;;
         help|--help|-h)
             show_help

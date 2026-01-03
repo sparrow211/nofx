@@ -48,7 +48,7 @@ export function LoginPage() {
       // Dismiss the "login expired" toast on successful login
       if (expiredToastId) {
         toast.dismiss(expiredToastId)
-    }
+      }
     }
     setLoading(false)
   }
@@ -68,7 +68,7 @@ export function LoginPage() {
         // Dismiss the "login expired" toast on successful login (no OTP required)
         if (expiredToastId) {
           toast.dismiss(expiredToastId)
-      }
+        }
       }
     } else {
       const msg = result.message || t('loginFailed', language)
@@ -94,7 +94,7 @@ export function LoginPage() {
       // Dismiss the "login expired" toast on successful OTP verification
       if (expiredToastId) {
         toast.dismiss(expiredToastId)
-    }
+      }
     }
     // 成功的话AuthContext会自动处理登录状态
 
@@ -111,8 +111,8 @@ export function LoginPage() {
         <div className="text-center mb-8">
           <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center">
             <img
-              src="/icons/aibtc.svg"
-              alt="AIBTC Logo"
+              src="/icons/nofx.svg"
+              alt="NoFx Logo"
               className="w-16 h-16 object-contain"
             />
           </div>
@@ -120,7 +120,7 @@ export function LoginPage() {
             className="text-2xl font-bold"
             style={{ color: 'var(--brand-light-gray)' }}
           >
-            登录 AIBTC
+            登录 NOFX
           </h1>
           <p
             className="text-sm mt-2"

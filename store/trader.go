@@ -2,6 +2,8 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -23,6 +25,7 @@ type Trader struct {
 	ScanIntervalMinutes int       `json:"scan_interval_minutes"`
 	IsRunning           bool      `json:"is_running"`
 	IsCrossMargin       bool      `json:"is_cross_margin"`
+	ShowInCompetition   bool      `json:"show_in_competition"`   // Whether to show in competition page
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 
@@ -66,8 +69,7 @@ func (s *TraderStore) initTables() error {
 			system_prompt_template TEXT DEFAULT 'default',
 			is_cross_margin BOOLEAN DEFAULT 1,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
 	if err != nil {
@@ -98,12 +100,92 @@ func (s *TraderStore) initTables() error {
 		`ALTER TABLE traders ADD COLUMN use_oi_top BOOLEAN DEFAULT 0`,
 		`ALTER TABLE traders ADD COLUMN system_prompt_template TEXT DEFAULT 'default'`,
 		`ALTER TABLE traders ADD COLUMN strategy_id TEXT DEFAULT ''`,
+		`ALTER TABLE traders ADD COLUMN show_in_competition BOOLEAN DEFAULT 1`,
 	}
 	for _, q := range alterQueries {
 		s.db.Exec(q)
 	}
 
+	// Migration: Remove FOREIGN KEY constraint from existing traders table
+	// SQLite doesn't support ALTER TABLE DROP CONSTRAINT, so we need to recreate the table
+	if err := s.migrateTradersRemoveFK(); err != nil {
+		// Log but don't fail - this is a best-effort migration
+		// The constraint may not exist in older databases
+	}
+
 	return nil
+}
+
+// migrateTradersRemoveFK removes FOREIGN KEY constraint from traders table if it exists
+func (s *TraderStore) migrateTradersRemoveFK() error {
+	// Check if the table has a foreign key constraint by examining the schema
+	var sql string
+	err := s.db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='traders'`).Scan(&sql)
+	if err != nil {
+		return err
+	}
+
+	// If no FOREIGN KEY in schema, no migration needed
+	if !strings.Contains(sql, "FOREIGN KEY") {
+		return nil
+	}
+
+	// Recreate table without FOREIGN KEY constraint
+	_, err = s.db.Exec(`
+		-- Create new table without FOREIGN KEY
+		CREATE TABLE IF NOT EXISTS traders_new (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL DEFAULT 'default',
+			name TEXT NOT NULL,
+			ai_model_id TEXT NOT NULL,
+			exchange_id TEXT NOT NULL,
+			initial_balance REAL NOT NULL,
+			scan_interval_minutes INTEGER DEFAULT 3,
+			is_running BOOLEAN DEFAULT 0,
+			btc_eth_leverage INTEGER DEFAULT 5,
+			altcoin_leverage INTEGER DEFAULT 5,
+			trading_symbols TEXT DEFAULT '',
+			use_coin_pool BOOLEAN DEFAULT 0,
+			use_oi_top BOOLEAN DEFAULT 0,
+			custom_prompt TEXT DEFAULT '',
+			override_base_prompt BOOLEAN DEFAULT 0,
+			system_prompt_template TEXT DEFAULT 'default',
+			is_cross_margin BOOLEAN DEFAULT 1,
+			strategy_id TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		-- Copy data from old table
+		INSERT OR IGNORE INTO traders_new
+		SELECT id, user_id, name, ai_model_id, exchange_id, initial_balance,
+		       scan_interval_minutes, is_running, btc_eth_leverage, altcoin_leverage,
+		       trading_symbols, use_coin_pool, use_oi_top, custom_prompt,
+		       override_base_prompt, system_prompt_template, is_cross_margin,
+		       COALESCE(strategy_id, ''), created_at, updated_at
+		FROM traders;
+
+		-- Drop old table
+		DROP TABLE traders;
+
+		-- Rename new table
+		ALTER TABLE traders_new RENAME TO traders;
+	`)
+
+	if err != nil {
+		return err
+	}
+
+	// Recreate trigger
+	_, err = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS update_traders_updated_at
+		AFTER UPDATE ON traders
+		BEGIN
+			UPDATE traders SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+		END
+	`)
+
+	return err
 }
 
 func (s *TraderStore) decrypt(encrypted string) string {
@@ -117,12 +199,12 @@ func (s *TraderStore) decrypt(encrypted string) string {
 func (s *TraderStore) Create(trader *Trader) error {
 	_, err := s.db.Exec(`
 		INSERT INTO traders (id, user_id, name, ai_model_id, exchange_id, strategy_id, initial_balance,
-		                     scan_interval_minutes, is_running, is_cross_margin,
+		                     scan_interval_minutes, is_running, is_cross_margin, show_in_competition,
 		                     btc_eth_leverage, altcoin_leverage, trading_symbols, use_coin_pool,
 		                     use_oi_top, custom_prompt, override_base_prompt, system_prompt_template)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, trader.ID, trader.UserID, trader.Name, trader.AIModelID, trader.ExchangeID, trader.StrategyID,
-		trader.InitialBalance, trader.ScanIntervalMinutes, trader.IsRunning, trader.IsCrossMargin,
+		trader.InitialBalance, trader.ScanIntervalMinutes, trader.IsRunning, trader.IsCrossMargin, trader.ShowInCompetition,
 		trader.BTCETHLeverage, trader.AltcoinLeverage, trader.TradingSymbols, trader.UseCoinPool,
 		trader.UseOITop, trader.CustomPrompt, trader.OverrideBasePrompt, trader.SystemPromptTemplate)
 	return err
@@ -133,6 +215,7 @@ func (s *TraderStore) List(userID string) ([]*Trader, error) {
 	rows, err := s.db.Query(`
 		SELECT id, user_id, name, ai_model_id, exchange_id, COALESCE(strategy_id, ''),
 		       initial_balance, scan_interval_minutes, is_running, COALESCE(is_cross_margin, 1),
+		       COALESCE(show_in_competition, 1),
 		       COALESCE(btc_eth_leverage, 5), COALESCE(altcoin_leverage, 5), COALESCE(trading_symbols, ''),
 		       COALESCE(use_coin_pool, 0), COALESCE(use_oi_top, 0), COALESCE(custom_prompt, ''),
 		       COALESCE(override_base_prompt, 0), COALESCE(system_prompt_template, 'default'),
@@ -151,6 +234,7 @@ func (s *TraderStore) List(userID string) ([]*Trader, error) {
 		err := rows.Scan(
 			&t.ID, &t.UserID, &t.Name, &t.AIModelID, &t.ExchangeID, &t.StrategyID,
 			&t.InitialBalance, &t.ScanIntervalMinutes, &t.IsRunning, &t.IsCrossMargin,
+			&t.ShowInCompetition,
 			&t.BTCETHLeverage, &t.AltcoinLeverage, &t.TradingSymbols,
 			&t.UseCoinPool, &t.UseOITop, &t.CustomPrompt, &t.OverrideBasePrompt,
 			&t.SystemPromptTemplate, &createdAt, &updatedAt,
@@ -171,16 +255,33 @@ func (s *TraderStore) UpdateStatus(userID, id string, isRunning bool) error {
 	return err
 }
 
+// UpdateShowInCompetition updates trader competition visibility
+func (s *TraderStore) UpdateShowInCompetition(userID, id string, showInCompetition bool) error {
+	_, err := s.db.Exec(`UPDATE traders SET show_in_competition = ? WHERE id = ? AND user_id = ?`, showInCompetition, id, userID)
+	return err
+}
+
 // Update updates trader configuration
 func (s *TraderStore) Update(trader *Trader) error {
+	fmt.Printf("📝 TraderStore.Update: ID=%s, Name=%s, AIModelID=%s, StrategyID=%s\n",
+		trader.ID, trader.Name, trader.AIModelID, trader.StrategyID)
 	_, err := s.db.Exec(`
 		UPDATE traders SET
-			name = ?, ai_model_id = ?, exchange_id = ?, strategy_id = ?,
-			scan_interval_minutes = ?, is_cross_margin = ?,
+			name = ?,
+			ai_model_id = ?,
+			exchange_id = ?,
+			strategy_id = ?,
+			initial_balance = CASE WHEN ? > 0 THEN ? ELSE initial_balance END,
+			scan_interval_minutes = CASE WHEN ? > 0 THEN ? ELSE scan_interval_minutes END,
+			is_cross_margin = ?,
+			show_in_competition = ?,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND user_id = ?
 	`, trader.Name, trader.AIModelID, trader.ExchangeID, trader.StrategyID,
-		trader.ScanIntervalMinutes, trader.IsCrossMargin, trader.ID, trader.UserID)
+		trader.InitialBalance, trader.InitialBalance,
+		trader.ScanIntervalMinutes, trader.ScanIntervalMinutes,
+		trader.IsCrossMargin, trader.ShowInCompetition,
+		trader.ID, trader.UserID)
 	return err
 }
 
@@ -197,8 +298,12 @@ func (s *TraderStore) UpdateCustomPrompt(userID, id string, customPrompt string,
 	return err
 }
 
-// Delete deletes trader
+// Delete deletes trader and associated data
 func (s *TraderStore) Delete(userID, id string) error {
+	// Delete associated equity snapshots first
+	_, _ = s.db.Exec(`DELETE FROM trader_equity_snapshots WHERE trader_id = ?`, id)
+
+	// Delete the trader
 	_, err := s.db.Exec(`DELETE FROM traders WHERE id = ? AND user_id = ?`, id, userID)
 	return err
 }
@@ -222,10 +327,11 @@ func (s *TraderStore) GetFullConfig(userID, traderID string) (*TraderFullConfig,
 			t.created_at, t.updated_at,
 			a.id, a.user_id, a.name, a.provider, a.enabled, a.api_key,
 			COALESCE(a.custom_api_url, ''), COALESCE(a.custom_model_name, ''), a.created_at, a.updated_at,
-			e.id, e.user_id, e.name, e.type, e.enabled, e.api_key, e.secret_key, COALESCE(e.passphrase, ''), e.testnet,
+			e.id, COALESCE(e.exchange_type, '') as exchange_type, COALESCE(e.account_name, '') as account_name,
+			e.user_id, e.name, e.type, e.enabled, e.api_key, e.secret_key, COALESCE(e.passphrase, ''), e.testnet,
 			COALESCE(e.hyperliquid_wallet_addr, ''), COALESCE(e.aster_user, ''), COALESCE(e.aster_signer, ''),
 			COALESCE(e.aster_private_key, ''), COALESCE(e.lighter_wallet_addr, ''), COALESCE(e.lighter_private_key, ''),
-			COALESCE(e.lighter_api_key_private_key, ''), e.created_at, e.updated_at
+			COALESCE(e.lighter_api_key_private_key, ''), COALESCE(e.lighter_api_key_index, 0), e.created_at, e.updated_at
 		FROM traders t
 		JOIN ai_models a ON t.ai_model_id = a.id AND t.user_id = a.user_id
 		JOIN exchanges e ON t.exchange_id = e.id AND t.user_id = e.user_id
@@ -238,10 +344,11 @@ func (s *TraderStore) GetFullConfig(userID, traderID string) (*TraderFullConfig,
 		&trader.SystemPromptTemplate, &traderCreatedAt, &traderUpdatedAt,
 		&aiModel.ID, &aiModel.UserID, &aiModel.Name, &aiModel.Provider, &aiModel.Enabled, &aiModel.APIKey,
 		&aiModel.CustomAPIURL, &aiModel.CustomModelName, &aiModelCreatedAt, &aiModelUpdatedAt,
-		&exchange.ID, &exchange.UserID, &exchange.Name, &exchange.Type, &exchange.Enabled,
+		&exchange.ID, &exchange.ExchangeType, &exchange.AccountName,
+		&exchange.UserID, &exchange.Name, &exchange.Type, &exchange.Enabled,
 		&exchange.APIKey, &exchange.SecretKey, &exchange.Passphrase, &exchange.Testnet, &exchange.HyperliquidWalletAddr,
 		&exchange.AsterUser, &exchange.AsterSigner, &exchange.AsterPrivateKey,
-		&exchange.LighterWalletAddr, &exchange.LighterPrivateKey, &exchange.LighterAPIKeyPrivateKey,
+		&exchange.LighterWalletAddr, &exchange.LighterPrivateKey, &exchange.LighterAPIKeyPrivateKey, &exchange.LighterAPIKeyIndex,
 		&exchangeCreatedAt, &exchangeUpdatedAt,
 	)
 	if err != nil {
@@ -368,6 +475,7 @@ func (s *TraderStore) ListAll() ([]*Trader, error) {
 	rows, err := s.db.Query(`
 		SELECT id, user_id, name, ai_model_id, exchange_id, COALESCE(strategy_id, ''),
 		       initial_balance, scan_interval_minutes, is_running, COALESCE(is_cross_margin, 1),
+		       COALESCE(show_in_competition, 1),
 		       COALESCE(btc_eth_leverage, 5), COALESCE(altcoin_leverage, 5), COALESCE(trading_symbols, ''),
 		       COALESCE(use_coin_pool, 0), COALESCE(use_oi_top, 0), COALESCE(custom_prompt, ''),
 		       COALESCE(override_base_prompt, 0), COALESCE(system_prompt_template, 'default'),
@@ -386,6 +494,7 @@ func (s *TraderStore) ListAll() ([]*Trader, error) {
 		err := rows.Scan(
 			&t.ID, &t.UserID, &t.Name, &t.AIModelID, &t.ExchangeID, &t.StrategyID,
 			&t.InitialBalance, &t.ScanIntervalMinutes, &t.IsRunning, &t.IsCrossMargin,
+			&t.ShowInCompetition,
 			&t.BTCETHLeverage, &t.AltcoinLeverage, &t.TradingSymbols,
 			&t.UseCoinPool, &t.UseOITop, &t.CustomPrompt, &t.OverrideBasePrompt,
 			&t.SystemPromptTemplate, &createdAt, &updatedAt,
