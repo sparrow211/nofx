@@ -234,7 +234,12 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		logger.Infof("🏦 [%s] Using Bitget Futures trading", config.Name)
 		trader = NewBitgetTrader(config.BitgetAPIKey, config.BitgetSecretKey, config.BitgetPassphrase)
 	case "hyperliquid":
-		logger.Infof("🏦 [%s] Using Hyperliquid trading", config.Name)
+		
+		//判断名称是否带有'test'启用测试网
+		if strings.Contains(strings.ToLower(config.Name), "test") {
+			config.HyperliquidTestnet = true
+		}
+		logger.Infof("🏦 [%s] Using Hyperliquid trading [%s]", config.Name,config.HyperliquidTestnet)
 		trader, err = NewHyperliquidTrader(config.HyperliquidPrivateKey, config.HyperliquidWalletAddr, config.HyperliquidTestnet)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize Hyperliquid trader: %w", err)
